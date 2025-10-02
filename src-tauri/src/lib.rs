@@ -1,0 +1,657 @@
+// client/src-tauri/src/lib.rs
+// Module declarations
+mod api;
+mod auth;
+mod terminal;
+mod commands;
+mod grids;
+mod p2p;
+mod process;
+mod discovery;
+mod state;
+mod transport;
+mod utils;
+mod websocket;
+mod codes;
+mod share;
+use tauri::Manager;
+pub mod messaging;
+mod windows;
+mod media; 
+use crate::terminal::TerminalManager;
+use crate::transport::start_transport_tunnel_with_permissions;
+use crate::process::TerminalProcessBridge;
+use crate::windows::WindowManager;
+use std::sync::Arc;
+use tauri::Emitter;
+use commands::*;
+use crate::commands::p2p::get_network_status;
+// Import discovery commands
+use crate::commands::discovery::{
+    scan_processes,
+    quick_scan_processes,
+    analyze_specific_port,
+};
+
+
+// Keep all existing window commands (unchanged)
+use crate::windows::{
+    get_all_windows,
+    get_window_state,
+    create_tab,
+    close_tab,
+    activate_tab,
+    detach_tab,
+    reattach_tab,
+    move_tab,
+    close_window,
+    focus_window,
+    update_tab_title,
+    set_tab_notification,
+    get_window_stats,
+    create_terminal_tab,
+    create_text_channel_tab,
+    create_media_channel_tab,
+    create_process_tab,
+    create_grid_dashboard_tab,
+    create_welcome_tab,
+    get_active_tab,
+    window_exists,
+    get_tab_count,
+    serialize_window_state,
+    restore_window_state,
+};
+
+use crate::commands::media::{
+    get_media_devices,
+    test_audio_device,
+    test_video_device,
+    start_audio_capture,
+    stop_audio_capture,
+    mute_audio,
+    set_audio_volume,
+    get_audio_level,
+    start_video_capture,
+    stop_video_capture,
+    toggle_video,
+    start_screen_share,
+    stop_screen_share,
+    get_screen_sources,
+    create_media_session,
+    get_active_media_sessions,
+    save_audio_settings,
+    load_audio_settings,
+    save_video_settings,
+    load_video_settings,
+    get_detailed_audio_level,
+    set_voice_activation_threshold,
+    get_media_manager_status,
+};
+
+
+
+// Re-exports for easy access
+pub use commands::*;
+pub use state::app::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::new())
+        .setup(|app| {
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            
+            log::info!("RogueGrid9 client starting up");
+            log::info!("Coordinator URL: https://api.roguegrid9.com");
+            
+            // Initialize storage on app start
+            auth::initialize_storage();
+            
+            let app_handle = app.handle().clone();
+            
+            // Initialize services in the right order
+            tauri::async_runtime::spawn(async move {
+                let state = app_handle.state::<AppState>();
+                
+                async fn initialize_all_services(
+                    app_handle: tauri::AppHandle, 
+                    state: tauri::State<'_, AppState>
+                ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                    // 1. Initialize grids service first
+                    if let Err(e) = initialize_grids_service(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize grids service: {}", e);
+                    }
+                    
+                    if let Err(e) = initialize_terminal_manager(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize terminal manager: {}", e);
+                    }
+                    
+                    // 2. Initialize process manager
+                    if let Err(e) = initialize_process_manager(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize process manager: {}", e);
+                    }
+                    
+                    // 3. Discovery system no longer needs initialization (simplified)
+                    
+                    // 4. Setup terminal recovery listener
+                    {
+                        let process_manager_guard = state.process_manager.lock().await;
+                        if let Some(ref manager) = *process_manager_guard {
+                            if let Err(e) = manager.setup_terminal_recovery_listener().await {
+                                log::error!("Failed to setup terminal recovery listener: {}", e);
+                            }
+                        }
+                    }
+                    
+                    if let Err(e) = connect_terminal_to_process_bridge(state.clone()).await {
+                        log::error!("Failed to set up terminal-process bridge: {}", e);
+                    }
+                    
+                    
+                    if let Err(e) = initialize_window_manager(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize window manager: {}", e);
+                    }
+                    // 5. Initialize P2P manager
+                    if let Err(e) = initialize_p2p_service(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize P2P service: {}", e);
+                    }
+                    // 6. Set up cross-service integration
+                    if let Err(e) = setup_service_integration(state.clone()).await {
+                        log::error!("Failed to set up service integration: {}", e);
+                    }
+                    if let Err(e) = initialize_codes_service(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize codes service: {}", e);
+                    }
+                    if let Err(e) = initialize_messaging_service(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize messaging service: {}", e);
+                    }
+                    if let Err(e) = initialize_media_manager(app_handle.clone(), state.clone()).await {
+                        log::error!("Failed to initialize media manager: {}", e);
+                    }
+                    log::info!("All services initialized successfully");
+                    Ok(())
+                }
+                
+                if let Err(e) = initialize_all_services(app_handle.clone(), state).await {
+                    log::error!("Service initialization failed: {}", e);
+                }
+            });
+            
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // ============================================================================
+            // AUTHENTICATION COMMANDS
+            // ============================================================================
+            initialize_app_storage,
+            create_guest_session,
+            promote_account_simple,
+            check_supabase_session,
+            initialize_user_session,
+            get_user_state,
+            promote_account,
+            clear_user_session,
+            check_connection_status,
+            validate_token,
+            update_username,
+            check_username_availability,
+            promote_account_with_username,
+            get_auth_token,
+
+            // ============================================================================
+            // PROCESS MANAGEMENT COMMANDS
+            // ============================================================================
+            initialize_process_manager,
+            start_process,
+            stop_process,
+            get_process_status,
+            send_process_input,
+            get_active_processes,
+            start_grid_process,
+            stop_grid_process,
+            send_grid_process_data,
+            get_process_session_id,
+            get_process_display_name,
+            get_process_info,
+            check_process_health,
+            create_shared_process,
+            get_grid_shared_processes,
+            start_p2p_sharing,
+            stop_p2p_sharing,
+
+            // ============================================================================
+            // PROCESS DISCOVERY COMMANDS
+            // ============================================================================
+            scan_processes,
+            quick_scan_processes,
+            analyze_specific_port,
+
+
+            // ============================================================================
+            // TERMINAL SESSION COMMANDS
+            // ============================================================================
+            create_terminal_session,
+            send_terminal_input,
+            send_terminal_string,
+            send_terminal_command,
+            send_terminal_interrupt,
+            send_terminal_eof,
+            get_terminal_sessions,
+            get_grid_terminal_sessions,
+            get_terminal_session,
+            terminate_terminal_session,
+            resize_terminal_session,
+            get_terminal_session_history,
+            add_user_to_terminal_session,
+            remove_user_from_terminal_session,
+            get_available_shells,
+            get_default_shell,
+            get_terminal_statistics,
+            create_terminal_session_preset,
+            create_terminal_session_with_command,
+            disconnect_terminal_ui,
+            reconnect_terminal_ui,
+            get_background_terminal_sessions,
+            get_active_ui_terminal_sessions,
+            cleanup_dead_terminal_sessions,
+            get_terminal_session_context,
+
+            // ============================================================================
+            // TERMINAL-PROCESS BRIDGE COMMANDS
+            // ============================================================================
+            create_terminal_process_command,
+            create_terminal_as_grid_process,
+            connect_terminal_to_grid,
+            get_grid_terminal_processes,
+            send_terminal_process_input,
+            stop_terminal_process,
+            grid_has_terminal_process,
+            get_grid_terminal_session_id,
+            register_terminal_as_process,
+
+
+
+            // ============================================================================
+            // GRID SERVICE COMMANDS
+            // ============================================================================
+            initialize_grids_service,
+            create_grid,
+            get_my_grids,
+            get_grids_from_cache,
+            get_grid_details,
+            get_grid_members,
+            invite_user_to_grid,
+            join_grid_by_code,
+            get_grid_invitations,
+            accept_grid_invitation,
+            decline_grid_invitation,
+            search_users,
+            get_grids_state,
+            get_grid_processes,
+            get_grid_channels,
+            delete_grid_process,        
+            delete_grid_channel,  
+            update_member_role,  
+
+            // ============================================================================
+            // WEBSOCKET COMMANDS
+            // ============================================================================
+            connect_websocket,
+            disconnect_websocket,
+            is_websocket_connected,
+
+            // ============================================================================
+            // P2P COMMANDS
+            // ============================================================================
+            initialize_p2p_service,
+            join_grid_session,
+            release_grid_host,
+            get_grid_session_status,
+            get_active_p2p_sessions,
+            close_p2p_session,
+            send_p2p_data,
+            get_network_status,
+
+            // Grid Relay Commands
+            get_grid_relay_config,
+            update_grid_relay_mode,
+            purchase_grid_bandwidth,
+            report_grid_bandwidth_usage,
+
+            // ============================================================================
+            // TRANSPORT COMMANDS
+            // ============================================================================
+            start_transport_tunnel,
+            stop_transport_tunnel,
+            get_active_transports,
+            send_transport_terminal_input,
+            detect_service_type,
+
+            // ============================================================================
+            // PERMISSION COMMANDS
+            // ============================================================================
+            get_grid_permissions,
+            update_grid_settings,
+            update_member_permissions,
+            get_process_permissions,
+            get_grid_audit_log,
+            check_grid_permission,
+            start_transport_tunnel_with_permissions,
+
+            // ============================================================================
+            // RESOURCE CODE COMMANDS
+            // ============================================================================
+            initialize_codes_service,
+            generate_resource_code,
+            use_access_code,
+            list_grid_codes,
+            get_code_details,
+            revoke_code,
+            get_code_usage_history,
+            share_process,
+            create_grid_invite_code,
+            share_channel,
+            copy_code_to_clipboard,
+            create_shareable_link,
+            validate_access_code_format,
+            format_access_code_input,
+            get_grid_codes_from_cache,
+            get_active_codes_from_cache,
+            get_my_codes_from_cache,
+            get_codes_by_resource,
+            clear_grid_codes_cache,
+            revoke_multiple_codes,
+            refresh_grid_codes,
+
+            
+
+
+
+            // ============================================================================
+            // MESSAGING COMMANDS
+            // ============================================================================
+            create_channel,
+            create_text_channel,
+            create_voice_channel,
+            get_channel_details,
+            join_channel,
+            leave_channel,
+            send_message,
+            get_channel_messages,
+            edit_message,
+            delete_message,
+            add_message_reaction,
+            remove_message_reaction,
+            set_typing_indicator,
+            send_websocket_text_message,
+            send_websocket_edit_message,
+            send_websocket_delete_message,
+            send_websocket_typing_indicator,
+            get_messaging_state,
+            get_cached_messages,
+            get_cached_channels,
+            clear_grid_messaging_state,
+            reinitialize_messaging_service,
+            create_text_channel_tab,
+            create_voice_channel_tab, 
+            initialize_voice_session,  
+            join_voice_channel,       
+            leave_voice_channel,      
+            get_voice_channel_status, 
+
+            // ============================================================================
+            // WINDOW MANAGEMENT COMMANDS
+            // ============================================================================
+            initialize_window_manager,
+            get_all_windows,
+            get_window_state,
+            create_tab,
+            close_tab,
+            activate_tab,
+            detach_tab,
+            reattach_tab,
+            move_tab,
+            close_window,
+            focus_window,
+            update_tab_title,
+            set_tab_notification,
+            get_window_stats,
+            create_terminal_tab,
+            create_text_channel_tab,
+            create_media_channel_tab,
+            create_process_tab,
+            create_grid_dashboard_tab,
+            create_welcome_tab,
+            get_active_tab,
+            window_exists,
+            get_tab_count,
+            serialize_window_state,
+            restore_window_state,
+
+            // ============================================================================
+            // MEDIA COMMANDS
+            // ============================================================================
+            get_media_devices,
+            test_audio_device,
+            test_video_device,
+            start_audio_capture,
+            stop_audio_capture,
+            mute_audio,
+            set_audio_volume,
+            get_audio_level,
+            start_video_capture,
+            stop_video_capture,
+            toggle_video,
+            start_screen_share,
+            stop_screen_share,
+            get_screen_sources,
+            create_media_session,
+            get_active_media_sessions,
+            save_audio_settings,
+            load_audio_settings,
+            save_video_settings,
+            load_video_settings,
+            get_detailed_audio_level,
+            set_voice_activation_threshold,
+            get_media_manager_status,
+            initialize_media_session,
+            add_media_track,
+            remove_media_track,
+            set_track_enabled,
+            replace_video_track,
+            get_media_stats,
+            configure_media_quality,
+            get_media_sessions,
+            close_media_session,
+            send_media_signal,
+            handle_media_signal,
+
+            // ============================================================================
+            // SHARE MANAGEMENT COMMANDS
+            // ============================================================================
+            register_process_share,
+            unregister_process_share,
+            list_active_shares,
+            get_share_status,
+            handle_share_visitor,
+            handle_visitor_disconnect,
+
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+// Service integration setup (unchanged)
+async fn setup_service_integration(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    log::info!("Setting up service integration...");
+    
+    // Set up P2P-Process integration
+    {
+        let p2p_state = state.p2p_manager.lock().await;
+        if let Some(p2p_manager) = p2p_state.as_ref() {
+            if let Err(e) = p2p_manager.setup_process_event_listeners().await {
+                log::error!("Failed to set up P2P process listeners: {}", e);
+                return Err(e.to_string());
+            }
+        }
+    }
+    
+    // Set up Process-P2P integration
+    {
+        let process_state = state.process_manager.lock().await;
+        if let Some(process_manager) = process_state.as_ref() {
+            if let Err(e) = process_manager.setup_p2p_event_listeners().await {
+                log::error!("Failed to set up Process P2P listeners: {}", e);
+                return Err(e.to_string());
+            }
+        }
+    }
+    
+    {
+        let process_state = state.process_manager.lock().await;
+        let terminal_state = state.terminal_manager.lock().await;
+        
+        if let (Some(process_manager), Some(terminal_manager)) = (process_state.as_ref(), terminal_state.as_ref()) {
+            if let Err(e) = process_manager.set_terminal_manager((*terminal_manager).clone()).await {
+                log::error!("Failed to set up terminal-process bridge: {}", e);
+                return Err(e.to_string());
+            }
+        }
+    }
+
+    log::info!("Service integration setup complete");
+    Ok(())
+}
+
+// Keep all existing initialization functions unchanged
+async fn initialize_terminal_manager(
+    _app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Initializing terminal manager...");
+    
+    let terminal_manager = TerminalManager::new(_app_handle);
+    
+    let mut terminal_guard = state.terminal_manager.lock().await;
+    *terminal_guard = Some(terminal_manager);
+    
+    log::info!("Terminal manager initialized successfully");
+    Ok(())
+}
+
+async fn initialize_messaging_service(
+    _app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Initializing messaging service...");
+    
+    let api_client = match auth::get_authenticated_client().await {
+        Ok(client) => std::sync::Arc::new(client),
+        Err(_) => {
+            log::warn!("No authenticated client available, messaging service will be initialized when user authenticates");
+            return Ok(());
+        }
+    };
+    
+    let messaging_service = crate::messaging::MessagingService::new(api_client);
+    
+    let mut messaging_guard = state.messaging_service.lock().await;
+    *messaging_guard = Some(messaging_service);
+    
+    log::info!("Messaging service initialized successfully");
+    Ok(())
+}
+
+async fn initialize_window_manager(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Initializing window manager...");
+    
+    let window_manager = WindowManager::new(app_handle);
+    
+    let mut window_guard = state.window_manager.lock().await;
+    *window_guard = Some(window_manager);
+    
+    log::info!("Window manager initialized successfully");
+    Ok(())
+}
+
+async fn connect_terminal_to_process_bridge(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Connecting terminal manager to process bridge...");
+    
+    let terminal_manager = {
+        let tm_guard = state.terminal_manager.lock().await;
+        tm_guard.as_ref().cloned()
+    };
+    
+    if let Some(terminal_manager) = terminal_manager {
+        let pm_guard = state.process_manager.lock().await;
+        if let Some(process_manager) = pm_guard.as_ref() {
+            process_manager.set_terminal_manager(terminal_manager).await
+                .map_err(|e| {
+                    log::error!("Failed to connect terminal manager to process bridge: {}", e);
+                    e.to_string()
+                })?;
+            
+            log::info!("Terminal manager successfully connected to process bridge");
+        } else {
+            return Err("Process manager not initialized".to_string());
+        }
+    } else {
+        return Err("Terminal manager not initialized".to_string());
+    }
+    
+    Ok(())
+}
+
+async fn initialize_media_manager(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Initializing MediaManager with audio device support");
+    
+    // Create API client
+    let api_client = Arc::new(crate::api::client::CoordinatorClient::new());
+    
+    // Initialize MediaManager with error handling
+    match crate::media::MediaManager::new(app_handle.clone(), api_client) {
+        Ok(media_manager) => {
+            let mut media_guard = state.media_manager.lock().await;
+            *media_guard = Some(media_manager);
+            log::info!("MediaManager initialized successfully");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Failed to initialize MediaManager: {}", e);
+            
+            // Emit error event to frontend
+            if let Err(emit_err) = app_handle.emit("media_manager_error", &serde_json::json!({
+                "error": e.to_string(),
+                "suggestion": "Check that audio drivers are properly installed and accessible"
+            })) {
+                log::error!("Failed to emit media manager error: {}", emit_err);
+            }
+            
+            // Continue without media manager - audio features will be disabled
+            log::warn!("MediaManager initialization failed, continuing without audio support");
+            Ok(())
+        }
+    }
+}
+
+
+
+

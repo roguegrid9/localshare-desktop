@@ -1,0 +1,14 @@
+{
+  "identifier": "http-localhost",
+  "permissions": [
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "http://localhost:8080/*"
+        }
+      ],
+      "deny": []
+    }
+  ]
+}

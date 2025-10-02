@@ -1,0 +1,48 @@
+@import "tailwindcss";
+@import '@xterm/xterm/css/xterm.css';
+/* Tell Tailwind where to scan (v4 way) */
+@source "./**/*.{ts,tsx,js,jsx,html}";
+@source "../index.html";
+
+/* your globals */
+html, body, #root { 
+  height: 100%; 
+  width: 100%;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* Prevent any element from creating horizontal scroll */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0B0D10;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.25s ease-out;
+}
+
+/* Hide scrollbars while keeping scroll functionality */
+.scrollbar-none {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
