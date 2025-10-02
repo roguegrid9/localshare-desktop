@@ -377,10 +377,21 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
                 </div>
 
                 {/* Next Steps */}
-                <div className="rounded-lg border border-green-500/20 bg-green-500/10 p-3">
-                  <p className="text-sm text-green-200">
-                    <strong>Ready to go!</strong> Your grid will appear in the sidebar and you can start adding processes and channels.
-                  </p>
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-green-500/20 bg-green-500/10 p-3">
+                    <p className="text-sm text-green-200">
+                      <strong>Ready to go!</strong> Your grid will appear in the sidebar and you can start adding processes and channels.
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3">
+                    <p className="text-sm text-orange-200 mb-2">
+                      <strong>💡 Want to share your grid?</strong>
+                    </p>
+                    <p className="text-xs text-orange-200/80">
+                      After adding processes and channels, you can create a public share from the Grid Management page. Grid sharing creates a landing page where others can access your shared resources via a custom subdomain!
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

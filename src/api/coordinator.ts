@@ -278,6 +278,29 @@ export async function createGridShare(
 }
 
 /**
+ * List all grid shares for a grid
+ */
+export async function listGridShares(
+  token: string,
+  gridId: string
+): Promise<GridShare[]> {
+  const response = await fetch(`${API_BASE}/api/v1/grids/${gridId}/grid-shares`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to list grid shares: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
  * Get grid share details
  */
 export async function getGridShare(

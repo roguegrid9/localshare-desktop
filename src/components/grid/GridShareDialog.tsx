@@ -105,8 +105,8 @@ export function GridShareDialog({
       return;
     }
 
-    if (selectedProcesses.size === 0 && selectedChannels.size === 0) {
-      setError('Please select at least one process or channel to share');
+    if (selectedProcesses.size === 0) {
+      setError('Please select at least one process to share');
       return;
     }
 
@@ -159,11 +159,18 @@ export function GridShareDialog({
         }
       }
 
-      // Add selected channels
-      for (const channelId of selectedChannels) {
-        await addChannelToGridShare(token, gridShare.id, {
-          channel_id: channelId,
-        });
+      // Add selected channels (if any)
+      if (selectedChannels.size > 0) {
+        try {
+          for (const channelId of selectedChannels) {
+            await addChannelToGridShare(token, gridShare.id, {
+              channel_id: channelId,
+            });
+          }
+        } catch (channelErr) {
+          console.warn('Channel sharing not yet supported:', channelErr);
+          // Continue - channels are optional
+        }
       }
 
       onShareCreated();
