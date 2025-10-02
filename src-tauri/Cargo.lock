@@ -160,6 +160,7 @@ dependencies = [
  "futures-util",
  "glob",
  "hmac",
+ "http 0.2.12",
  "interceptor",
  "jsonwebtoken",
  "lazy_static",

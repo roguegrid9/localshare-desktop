@@ -14,6 +14,7 @@ mod utils;
 mod websocket;
 mod codes;
 mod share;
+mod tunnel;
 use tauri::Manager;
 pub mod messaging;
 mod windows;
@@ -485,6 +486,14 @@ pub fn run() {
             get_share_status,
             handle_share_visitor,
             handle_visitor_disconnect,
+
+            // ============================================================================
+            // TUNNEL MANAGEMENT COMMANDS
+            // ============================================================================
+            start_tunnel,
+            stop_tunnel,
+            get_tunnel_status,
+            list_active_tunnels,
 
         ])
         .run(tauri::generate_context!())

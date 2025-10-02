@@ -1,6 +1,7 @@
 // API client for RogueGrid9 coordinator server
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+// For Tauri apps, always use the production API
+const API_BASE = 'https://roguegrid9-coordinator.fly.dev';
 
 // Debug: Log API base URL on module load
 console.log('🌐 API_BASE configured as:', API_BASE);
@@ -203,6 +204,201 @@ export async function getProcessShares(
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Failed to get process shares: ${error}`);
+  }
+
+  return response.json();
+}
+
+// ============================================================================
+// GRID SHARING API
+// ============================================================================
+
+export interface CreateGridShareRequest {
+  grid_id: string;
+  subdomain: string;
+  display_name?: string;
+  description?: string;
+  is_public: boolean;
+  requires_password: boolean;
+  password?: string;
+  max_concurrent_visitors?: number;
+  expires_in_hours?: number;
+}
+
+export interface GridShare {
+  id: string;
+  grid_id: string;
+  owner_id: string;
+  subdomain: string;
+  display_name: string;
+  description: string;
+  is_public: boolean;
+  requires_password: boolean;
+  max_concurrent_visitors: number;
+  expires_at: string | null;
+  total_visitors: number;
+  created_at: string;
+  share_url: string;
+}
+
+export interface AddProcessToShareRequest {
+  process_id: string;
+  custom_label?: string;
+  exposed_port: number;
+  override_traffic_type?: string;
+}
+
+export interface AddChannelToShareRequest {
+  channel_id: string;
+  custom_label?: string;
+}
+
+/**
+ * Create a new grid share
+ */
+export async function createGridShare(
+  token: string,
+  request: CreateGridShareRequest
+): Promise<GridShare> {
+  const response = await fetch(`${API_BASE}/api/v1/grid-shares`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create grid share: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get grid share details
+ */
+export async function getGridShare(
+  token: string,
+  gridShareId: string
+): Promise<GridShare> {
+  const response = await fetch(`${API_BASE}/api/v1/grid-shares/${gridShareId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to get grid share: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update grid share settings
+ */
+export async function updateGridShare(
+  token: string,
+  gridShareId: string,
+  request: Partial<CreateGridShareRequest>
+): Promise<{ status: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/grid-shares/${gridShareId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to update grid share: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete a grid share
+ */
+export async function deleteGridShare(
+  token: string,
+  gridShareId: string
+): Promise<{ status: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/grid-shares/${gridShareId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to delete grid share: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Add a process to a grid share
+ */
+export async function addProcessToGridShare(
+  token: string,
+  gridShareId: string,
+  request: AddProcessToShareRequest
+): Promise<{ status: string }> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/grid-shares/${gridShareId}/processes`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to add process to grid share: ${error}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Add a channel to a grid share
+ */
+export async function addChannelToGridShare(
+  token: string,
+  gridShareId: string,
+  request: AddChannelToShareRequest
+): Promise<{ status: string }> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/grid-shares/${gridShareId}/channels`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to add channel to grid share: ${error}`);
   }
 
   return response.json();

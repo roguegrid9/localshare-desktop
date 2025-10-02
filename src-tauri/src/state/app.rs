@@ -14,6 +14,7 @@ use crate::media::MediaManager;
 use crate::discovery::Discovery;
 use crate::process::types::SharedProcess;
 use crate::share::{ShareManager, ShareConnectionManager};
+use crate::tunnel::TunnelClient;
 
 // User state structure
 #[derive(Debug, Clone)]
@@ -41,6 +42,8 @@ pub struct AppState {
     pub share_connection_manager: Arc<Mutex<Option<ShareConnectionManager>>>,
     pub user: Arc<Mutex<UserState>>,
     pub shared_processes: Arc<Mutex<HashMap<String, SharedProcess>>>,
+    pub active_tunnels: Arc<Mutex<HashMap<String, Arc<TunnelClient>>>>,
+    pub auth_token: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
@@ -66,6 +69,8 @@ impl AppState {
                 is_authenticated: false,
             })),
             shared_processes: Arc::new(Mutex::new(HashMap::new())),
+            active_tunnels: Arc::new(Mutex::new(HashMap::new())),
+            auth_token: Arc::new(Mutex::new(None)),
         }
     }
 }
