@@ -12,7 +12,6 @@ pub mod media;
 pub mod windows;
 pub mod discovery;
 pub mod share;
-pub mod tunnel;
 
 // Re-export all commands
 pub use auth::*;
@@ -27,4 +26,3 @@ pub use terminal::*;
 pub use messaging::*;
 pub use media::*;
 pub use share::*;
-pub use tunnel::*;

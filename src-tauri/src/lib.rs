@@ -14,7 +14,6 @@ mod utils;
 mod websocket;
 mod codes;
 mod share;
-mod tunnel;
 use tauri::Manager;
 pub mod messaging;
 mod windows;
@@ -119,6 +118,66 @@ pub fn run() {
             auth::initialize_storage();
             
             let app_handle = app.handle().clone();
+            
+            // ========================================
+            // AUTO-UPDATER - Check for updates on startup
+            // ========================================
+            #[cfg(not(debug_assertions))] // Only check for updates in release builds
+            {
+                let update_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    log::info!("Checking for updates...");
+                    
+                    match update_handle.updater().check().await {
+                        Ok(update) => {
+                            if update.is_update_available() {
+                                log::info!("Update available: {}", update.latest_version());
+                                
+                                // Show dialog to user
+                                if let Err(e) = update_handle.emit("update-available", &serde_json::json!({
+                                    "version": update.latest_version(),
+                                    "current_version": update.current_version(),
+                                })) {
+                                    log::error!("Failed to emit update-available event: {}", e);
+                                }
+                                
+                                // Download and install the update
+                                match update.download_and_install().await {
+                                    Ok(_) => {
+                                        log::info!("Update downloaded and installed successfully");
+                                        // Notify user to restart
+                                        if let Err(e) = update_handle.emit("update-installed", ()) {
+                                            log::error!("Failed to emit update-installed event: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to download/install update: {}", e);
+                                        if let Err(e) = update_handle.emit("update-error", &serde_json::json!({
+                                            "error": e.to_string()
+                                        })) {
+                                            log::error!("Failed to emit update-error event: {}", e);
+                                        }
+                                    }
+                                }
+                            } else {
+                                log::info!("No updates available - running latest version");
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to check for updates: {}", e);
+                            // Don't show error to user - updates are optional
+                        }
+                    }
+                });
+            }
+            
+            #[cfg(debug_assertions)]
+            {
+                log::info!("Auto-updater disabled in debug mode");
+            }
+            // ========================================
+            // END AUTO-UPDATER
+            // ========================================
             
             // Initialize services in the right order
             tauri::async_runtime::spawn(async move {
@@ -322,6 +381,7 @@ pub fn run() {
             close_p2p_session,
             send_p2p_data,
             get_network_status,
+            auto_host_grid,
 
             // Grid Relay Commands
             get_grid_relay_config,
@@ -487,14 +547,6 @@ pub fn run() {
             handle_share_visitor,
             handle_visitor_disconnect,
 
-            // ============================================================================
-            // TUNNEL MANAGEMENT COMMANDS
-            // ============================================================================
-            start_tunnel,
-            stop_tunnel,
-            get_tunnel_status,
-            list_active_tunnels,
-
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -503,7 +555,7 @@ pub fn run() {
 // Service integration setup (unchanged)
 async fn setup_service_integration(state: tauri::State<'_, AppState>) -> Result<(), String> {
     log::info!("Setting up service integration...");
-    
+
     // Set up P2P-Process integration
     {
         let p2p_state = state.p2p_manager.lock().await;
@@ -514,7 +566,7 @@ async fn setup_service_integration(state: tauri::State<'_, AppState>) -> Result<
             }
         }
     }
-    
+
     // Set up Process-P2P integration
     {
         let process_state = state.process_manager.lock().await;
@@ -525,11 +577,11 @@ async fn setup_service_integration(state: tauri::State<'_, AppState>) -> Result<
             }
         }
     }
-    
+
     {
         let process_state = state.process_manager.lock().await;
         let terminal_state = state.terminal_manager.lock().await;
-        
+
         if let (Some(process_manager), Some(terminal_manager)) = (process_state.as_ref(), terminal_state.as_ref()) {
             if let Err(e) = process_manager.set_terminal_manager((*terminal_manager).clone()).await {
                 log::error!("Failed to set up terminal-process bridge: {}", e);
@@ -660,7 +712,3 @@ async fn initialize_media_manager(
         }
     }
 }
-
-
-
-

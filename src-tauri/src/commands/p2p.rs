@@ -732,3 +732,29 @@ pub async fn report_grid_bandwidth_usage(
         .await
         .map_err(|e| format!("Failed to report bandwidth usage: {}", e))
 }
+
+// Auto-host a grid to ensure it's always available for P2P connections
+#[tauri::command]
+pub async fn auto_host_grid(
+    grid_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Auto-hosting grid: {}", grid_id);
+
+    let p2p_state = state.p2p_manager.lock().await;
+    if let Some(p2p_manager) = p2p_state.as_ref() {
+        match p2p_manager.claim_grid_host(grid_id.clone()).await {
+            Ok(_) => {
+                log::info!("Successfully auto-hosted grid: {}", grid_id);
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!("Failed to auto-host grid {}: {}", grid_id, e);
+                // Don't fail - grid might already be hosted
+                Ok(())
+            }
+        }
+    } else {
+        Err("P2P service not initialized".to_string())
+    }
+}

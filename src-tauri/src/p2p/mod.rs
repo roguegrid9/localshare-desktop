@@ -229,14 +229,14 @@ impl P2PManager {
     }
 
     // Claim host status for a grid
-    async fn claim_grid_host(&self, grid_id: String) -> Result<String> {
+    pub async fn claim_grid_host(&self, grid_id: String) -> Result<String> {
         log::info!("Attempting to claim host for grid: {}", grid_id);
 
         let token = self.get_auth_token().await?;
-        
+
         // Use the existing API client method
         self.api_client.claim_grid_host(&token, grid_id.clone()).await?;
-        
+
         log::info!("Successfully claimed host for grid: {}", grid_id);
         // Start hosting - no P2P connection needed, we ARE the host
         self.start_hosting_grid(grid_id.clone()).await?;

@@ -189,40 +189,163 @@ function StoppedState({ dashboard }: { dashboard: ProcessDashboardType }) {
   );
 }
 
-function GridSharingSection() {
+function P2PConnectionSection({
+  dashboard,
+  gridId,
+  processId
+}: {
+  dashboard: ProcessDashboardType;
+  gridId: string;
+  processId: string;
+}) {
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
+  const [transportId, setTransportId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Auto-host the grid when component loads
+  useEffect(() => {
+    const ensureGridHosted = async () => {
+      try {
+        await invoke('auto_host_grid', { gridId });
+        console.log('Grid auto-hosted successfully');
+      } catch (error) {
+        console.warn('Failed to auto-host grid:', error);
+      }
+    };
+    ensureGridHosted();
+  }, [gridId]);
+
+  // Auto-share the process when it's running
+  useEffect(() => {
+    if (dashboard.status === 'running' && connectionStatus === 'disconnected') {
+      // Small delay to ensure grid hosting is established
+      const timer = setTimeout(() => {
+        handleConnect();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [dashboard.status]);
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    setConnectionStatus('connecting');
+    setErrorMessage(null);
+
+    try {
+      // Start P2P transport tunnel to this process
+      const result = await invoke<any>('start_transport_tunnel', {
+        request: {
+          grid_id: gridId,
+          process_id: processId,
+          transport_type: 'http',
+          target_port: dashboard.local_port,
+          service_name: dashboard.name
+        }
+      });
+
+      setTransportId(result.transport_id);
+      setConnectionUrl(`http://localhost:${result.local_port || dashboard.local_port}`);
+      setConnectionStatus('connected');
+      setErrorMessage(null);
+    } catch (error) {
+      console.error('Failed to connect to process:', error);
+      const errorMsg = String(error);
+      setErrorMessage(errorMsg);
+      setConnectionStatus('disconnected');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   return (
-    <Section title={<div className="flex items-center gap-2"><Share2 className="w-4 h-4" />Grid Sharing</div>}>
+    <Section title={<div className="flex items-center gap-2"><Share2 className="w-4 h-4" />P2P Connection (Auto-Share)</div>}>
       <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-6">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-            <Info className="w-5 h-5 text-blue-400" />
+            <Server className="w-5 h-5 text-blue-400" />
           </div>
-          <div>
-            <h3 className="font-semibold text-blue-300 mb-2">Share at Grid Level</h3>
-            <p className="text-sm text-blue-200/80 mb-3">
-              Process sharing is now managed at the grid level. Create a grid share to make multiple processes and channels accessible via a single public landing page.
+          <div className="flex-1">
+            <h3 className="font-semibold text-blue-300 mb-2">Connect to Process</h3>
+            <p className="text-sm text-blue-200/80 mb-4">
+              This process is automatically shared via P2P networking when running. Grid members can access it directly through encrypted peer-to-peer connections.
             </p>
-            <ul className="space-y-2 text-sm text-blue-200/70 mb-4">
-              <li className="flex items-center gap-2">
+
+            {/* Connection Status */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  connectionStatus === 'connected' ? 'bg-green-400' :
+                  connectionStatus === 'connecting' ? 'bg-yellow-400 animate-pulse' :
+                  'bg-gray-400'
+                }`} />
+                <span className="text-sm text-white/80">
+                  {connectionStatus === 'connected' ? 'Connected' :
+                   connectionStatus === 'connecting' ? 'Connecting...' :
+                   'Not Connected'}
+                </span>
+              </div>
+
+              {connectionUrl && (
+                <div className="bg-black/30 rounded p-2 mb-2">
+                  <code className="text-xs text-green-300">{connectionUrl}</code>
+                </div>
+              )}
+
+              {errorMessage && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded p-2 mb-2">
+                  <p className="text-xs text-red-300">{errorMessage}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Process Info */}
+            <div className="space-y-2 text-sm text-blue-200/70 mb-4">
+              <div className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                One subdomain per grid (e.g., my-grid.roguegrid9.com)
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                Share multiple processes and channels together
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                Automatic HTTP/WebSocket tunneling
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                Public landing page with all shared resources
-              </li>
-            </ul>
-            <p className="text-sm text-blue-200/60">
-              To share this process, go to the <span className="font-semibold text-blue-300">Grid Management</span> page and click <span className="font-semibold text-blue-300">"Share This Grid"</span>.
-            </p>
+                Process Port: {dashboard.local_port}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            {connectionStatus !== 'connected' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleConnect}
+                  disabled={isConnecting || dashboard.status !== 'running'}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                    dashboard.status !== 'running'
+                      ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+                      : isConnecting
+                      ? 'bg-blue-600/50 text-blue-300 cursor-wait'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {isConnecting ? 'Connecting...' : 'Retry Connection'}
+                </button>
+              </div>
+            )}
+
+            {/* Status Messages */}
+            {dashboard.status !== 'running' && (
+              <p className="text-xs text-yellow-300 mt-3 flex items-center gap-1.5">
+                <AlertTriangle className="w-3 h-3" />
+                Process must be running to share via P2P
+              </p>
+            )}
+            {dashboard.status === 'running' && connectionStatus === 'disconnected' && !isConnecting && (
+              <p className="text-xs text-blue-300 mt-3 flex items-center gap-1.5">
+                <Info className="w-3 h-3" />
+                Waiting for P2P connection to establish...
+              </p>
+            )}
+            {connectionStatus === 'connected' && (
+              <p className="text-xs text-green-300 mt-3 flex items-center gap-1.5">
+                <Share2 className="w-3 h-3" />
+                Process is accessible to grid members via P2P
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -427,7 +550,11 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         </>
       )}
 
-      <GridSharingSection />
+      <P2PConnectionSection
+        dashboard={dashboard}
+        gridId={gridId}
+        processId={processId}
+      />
 
       <ComingSoonSection />
     </div>
