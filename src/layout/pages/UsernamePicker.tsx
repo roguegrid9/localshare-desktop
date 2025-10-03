@@ -48,19 +48,21 @@ export default function UsernamePicker({
     const checkAvailability = async () => {
       setIsChecking(true);
       setError(null);
-      
+
       try {
         const result = await checkUsernameAvailability(username);
+        console.log('Username availability check result:', result);
         setIsAvailable(result.available);
-        
+
         if (result.available) {
           onUsernameSelected(username);
         } else {
-          setError(result.message);
+          setError(result.message || 'Username is not available');
           onUsernameSelected(undefined);
         }
       } catch (err) {
-        setError('Failed to check username availability');
+        console.error('Username availability check failed:', err);
+        setError(err instanceof Error ? err.message : 'Failed to check username availability');
         setIsAvailable(false);
         onUsernameSelected(undefined);
       } finally {
@@ -90,10 +92,10 @@ export default function UsernamePicker({
   };
 
   const getStatusIcon = () => {
-    if (isChecking) return '⏳';
-    if (error) return '❌';
-    if (isAvailable === true) return '✅';
-    if (isAvailable === false) return '❌';
+    if (isChecking) return '...';
+    if (error) return '✗';
+    if (isAvailable === true) return '✓';
+    if (isAvailable === false) return '✗';
     return '';
   };
 

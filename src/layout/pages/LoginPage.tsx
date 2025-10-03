@@ -256,7 +256,7 @@ export default function Welcome({
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: 'http://localhost:1420' },
         });
         if (error) throw error;
         if (data.user && !data.session) {
@@ -286,15 +286,18 @@ export default function Welcome({
     setMsg(null);
     setBusy(true);
     try {
+      // Use localhost for OAuth redirect (works better with Tauri)
+      const redirectUrl = 'http://localhost:1420';
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: { 
-          redirectTo: window.location.origin, 
-          queryParams: { prompt: "select_account" } 
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: { prompt: "select_account" }
         },
       });
       if (error) throw error;
-      setMsg("Opening provider… You'll be redirected back automatically.");
+      setMsg("Opening provider… After signing in, you may need to refresh the app.");
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setBusy(false);
