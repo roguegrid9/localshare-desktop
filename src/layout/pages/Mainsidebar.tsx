@@ -7,6 +7,8 @@ import JoinGridModal from "./JoinGridModal";
 import { useGrids } from "../../hooks/useGrids";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { BandwidthDisplay, PurchaseBandwidthModal } from "../../components/relay";
+import { invoke } from "@tauri-apps/api/core";
+import { supabase } from "../../utils/supabase";
 
 interface NetworkStatus {
   nat_type: string;
@@ -67,9 +69,27 @@ export default function GridsRail({
     refreshGrids();
   };
 
-  const handleProfileMenuClick = (action: string) => {
+  const handleProfileMenuClick = async (action: string) => {
     console.log(`Profile action: ${action}`);
     setShowProfileMenu(false);
+
+    if (action === 'logout') {
+      try {
+        // Sign out from Supabase first
+        console.log('Signing out from Supabase...');
+        await supabase.auth.signOut();
+
+        // Then clear local session
+        console.log('Clearing local session...');
+        await invoke('clear_user_session');
+
+        console.log('Logged out successfully');
+        // Reload the app to reset state
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to logout:', error);
+      }
+    }
   };
 
   function getNetworkStatusTitle(status: NetworkStatus | null): string {
