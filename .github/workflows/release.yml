@@ -37,9 +37,18 @@ jobs:
         with:
           node-version: 20
 
+      - name: Debug - Show directory structure
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Directory contents:"
+          ls -la
+          echo "Checking if client exists:"
+          ls -la client/ || echo "client directory not found"
+
       - name: Install frontend dependencies
-        working-directory: ./client
         run: npm install
+        working-directory: ./client
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
