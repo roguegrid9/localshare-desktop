@@ -132,18 +132,15 @@ pub fn run() {
                     match update_handle.updater() {
                         Ok(updater) => match updater.check().await {
                             Ok(Some(update)) => {
-                                log::info!("Update available: {}", update.latest_version());
+                                log::info!("Update available!");
 
                                 // Show dialog to user
-                                if let Err(e) = update_handle.emit("update-available", &serde_json::json!({
-                                    "version": update.latest_version(),
-                                    "current_version": update.current_version(),
-                                })) {
+                                if let Err(e) = update_handle.emit("update-available", ()) {
                                     log::error!("Failed to emit update-available event: {}", e);
                                 }
 
                                 // Download and install the update
-                                match update.download_and_install().await {
+                                match update.download_and_install(|_, _| {}, || {}).await {
                                     Ok(_) => {
                                         log::info!("Update downloaded and installed successfully");
                                         // Notify user to restart
@@ -163,7 +160,6 @@ pub fn run() {
                             }
                             Ok(None) => {
                                 log::info!("No updates available - running latest version");
-                            }
                             }
                             Err(e) => {
                                 log::warn!("Failed to check for updates: {}", e);

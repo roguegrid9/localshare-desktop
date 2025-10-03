@@ -58,5 +58,5 @@ portable-pty = "0.8"
 shell-words = "1.1"
 # WebRTC dependencies
 webrtc = "0.9"
-interceptor = "0.9"
+interceptor = "0.10"
 bytes = "1.5"

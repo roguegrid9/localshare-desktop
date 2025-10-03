@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use app_lib::run;
+use roguegrid9::run;
 
 fn main() {
     run();
