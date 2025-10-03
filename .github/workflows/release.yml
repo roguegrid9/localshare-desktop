@@ -30,25 +30,15 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './client/src-tauri -> target'
+          workspaces: './src-tauri -> target'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Debug - Show directory structure
-        run: |
-          echo "Current directory:"
-          pwd
-          echo "Directory contents:"
-          ls -la
-          echo "Checking if client exists:"
-          ls -la client/ || echo "client directory not found"
-
       - name: Install frontend dependencies
         run: npm install
-        working-directory: ./client
 
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
@@ -57,7 +47,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: './client'
           tagName: ${{ github.ref_name }}
           releaseName: 'RogueGrid9 ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download this version and install.'
