@@ -15,6 +15,7 @@ mod websocket;
 mod codes;
 mod share;
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
 pub mod messaging;
 mod windows;
 mod media; 
@@ -128,11 +129,11 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     log::info!("Checking for updates...");
                     
-                    match update_handle.updater().check().await {
-                        Ok(update) => {
-                            if update.is_update_available() {
+                    match update_handle.updater() {
+                        Ok(updater) => match updater.check().await {
+                            Ok(Some(update)) => {
                                 log::info!("Update available: {}", update.latest_version());
-                                
+
                                 // Show dialog to user
                                 if let Err(e) = update_handle.emit("update-available", &serde_json::json!({
                                     "version": update.latest_version(),
@@ -140,7 +141,7 @@ pub fn run() {
                                 })) {
                                     log::error!("Failed to emit update-available event: {}", e);
                                 }
-                                
+
                                 // Download and install the update
                                 match update.download_and_install().await {
                                     Ok(_) => {
@@ -159,12 +160,18 @@ pub fn run() {
                                         }
                                     }
                                 }
-                            } else {
+                            }
+                            Ok(None) => {
                                 log::info!("No updates available - running latest version");
+                            }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to check for updates: {}", e);
+                                // Don't show error to user - updates are optional
                             }
                         }
                         Err(e) => {
-                            log::warn!("Failed to check for updates: {}", e);
+                            log::warn!("Failed to get updater: {}", e);
                             // Don't show error to user - updates are optional
                         }
                     }
