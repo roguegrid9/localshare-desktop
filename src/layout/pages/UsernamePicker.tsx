@@ -85,6 +85,7 @@ export default function UsernamePicker({
 
   const getStatusColor = () => {
     if (isChecking) return 'text-gray-400';
+    if (error && error.includes('Could not verify')) return 'text-yellow-400'; // Warning for server timeout
     if (error) return 'text-red-400';
     if (isAvailable === true) return 'text-green-400';
     if (isAvailable === false) return 'text-red-400';
@@ -93,6 +94,7 @@ export default function UsernamePicker({
 
   const getStatusIcon = () => {
     if (isChecking) return '...';
+    if (error && error.includes('Could not verify')) return '!'; // Warning for server timeout
     if (error) return '✗';
     if (isAvailable === true) return '✓';
     if (isAvailable === false) return '✗';
@@ -101,6 +103,7 @@ export default function UsernamePicker({
 
   const getHelperText = () => {
     if (isChecking) return 'Checking availability...';
+    if (error && error.includes('Could not verify')) return error; // Server check failed but allowed
     if (error) return error;
     if (isAvailable === true) return 'Username is available!';
     if (isAvailable === false) return 'Username is taken';

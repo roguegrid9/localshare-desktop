@@ -102,6 +102,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -114,7 +115,13 @@ pub fn run() {
             
             log::info!("RogueGrid9 client starting up");
             log::info!("Coordinator URL: https://api.roguegrid9.com");
-            
+
+            // Open DevTools for debugging
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+                log::info!("DevTools opened");
+            }
+
             // Initialize storage on app start
             auth::initialize_storage();
             
@@ -270,6 +277,7 @@ pub fn run() {
             check_username_availability,
             promote_account_with_username,
             get_auth_token,
+            start_oauth_server,
 
             // ============================================================================
             // PROCESS MANAGEMENT COMMANDS

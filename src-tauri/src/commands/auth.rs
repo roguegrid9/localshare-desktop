@@ -202,3 +202,23 @@ pub async fn get_auth_token() -> Result<String, String> {
             e.to_string()
         })
 }
+
+// Start OAuth callback server and return the port
+#[tauri::command]
+pub async fn start_oauth_server(window: tauri::Window) -> Result<u16, String> {
+    use tauri::Emitter;
+    log::info!("Tauri command: start_oauth_server called");
+
+    tauri_plugin_oauth::start(move |url| {
+        log::info!("OAuth callback received: {}", url);
+
+        // Emit the callback URL to the frontend
+        if let Err(e) = window.emit("oauth-callback", url.clone()) {
+            log::error!("Failed to emit OAuth callback event: {}", e);
+        }
+    })
+    .map_err(|e| {
+        log::error!("Failed to start OAuth server: {}", e);
+        e.to_string()
+    })
+}

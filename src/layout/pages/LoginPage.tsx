@@ -2,6 +2,9 @@ import { useCallback, useMemo, useState, useEffect } from "react";
 import UsernamePicker from './UsernamePicker';
 import { supabase } from "../../utils/supabase";
 import { useTauriCommands } from "../../hooks/useTauriCommands";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-shell";
 
 interface WelcomeProps {
   onSessionCreated: (userState: any) => void;
@@ -51,6 +54,7 @@ export default function Welcome({
   const [showUsernameStep, setShowUsernameStep] = useState(false);
   const [selectedUsername, setSelectedUsername] = useState<string | undefined>();
   const [pendingSupabaseToken, setPendingSupabaseToken] = useState<string | null>(null);
+  const [waitingForOAuth, setWaitingForOAuth] = useState(false);
   const canSubmit = useMemo(() => email && password.length >= 6, [email, password]);
 
   const {
@@ -66,16 +70,53 @@ export default function Welcome({
       try {
         setIsCheckingAuth(true);
         console.log('Checking for OAuth callback...');
-        
+
         // Initialize app first
         await initializeApp();
-        
-        // Check URL for OAuth callback
+
+        // Only check URL params if we're on an HTTP(S) URL, not tauri://
+        const currentUrl = window.location.href;
+        console.log('Current URL:', currentUrl);
+
+        // Skip OAuth detection for Tauri protocol URLs
+        if (currentUrl.startsWith('tauri://')) {
+          console.log('Tauri app - skipping OAuth URL detection');
+          setIsCheckingAuth(false);
+
+          // Still check for existing Supabase session in localStorage
+          try {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+            if (sessionError) {
+              console.error('Error getting existing session:', sessionError);
+              return;
+            }
+
+            if (session?.access_token) {
+              console.log('Found existing Supabase session');
+
+              try {
+                await promoteAccount(session.access_token);
+                const userState = await getUserState();
+                onSessionCreated(userState);
+                return;
+              } catch (promotionError) {
+                console.error('Failed to promote existing account:', promotionError);
+              }
+            }
+          } catch (error) {
+            console.error('Session check failed:', error);
+          }
+
+          return;
+        }
+
+        // For HTTP(S) URLs, check for OAuth callback params
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        
+
         console.log('URL params:', Object.fromEntries(urlParams.entries()));
-        
+
         // Check for authorization code in URL
         const code = urlParams.get('code') || hashParams.get('code');
         
@@ -169,26 +210,29 @@ export default function Welcome({
     handleAuthCallback();
   }, []);
 
-  // Setup auth state change listener
+  // Setup auth state change listener (for monitoring only, not auto-promotion)
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email);
-      
-      if (event === 'SIGNED_IN' && session?.access_token) {
-        try {
-          console.log('Signed in event detected, promoting account...');
-          await promoteAccount(session.access_token);
-          const userState = await getUserState();
-          onSessionCreated(userState);
-        } catch (error) {
-          console.error('Failed to handle sign-in event:', error);
-          setError(`Failed to complete sign-in: ${error}`);
-        }
-      }
-    });
+    try {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
 
-    return () => subscription.unsubscribe();
-  }, [promoteAccount, getUserState, onSessionCreated]);
+        // Just log events, don't auto-promote
+        // Promotion is handled explicitly in submit() and tryFinish()
+        // This prevents race conditions where both handlers try to promote simultaneously
+      });
+
+      return () => {
+        try {
+          subscription.unsubscribe();
+        } catch (error) {
+          console.error('Failed to unsubscribe from auth state changes:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Failed to setup auth state listener:', error);
+      return () => {}; // Return empty cleanup function
+    }
+  }, []);
 
   // Promote account after successful auth
   const promoteIfPossible = useCallback(async (skipUsernameStep = false) => {
@@ -253,71 +297,189 @@ export default function Welcome({
     setBusy(true);
     try {
       if (mode === "signup") {
+        console.log('Creating account with email:', email);
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: 'http://localhost:1420' },
+          options: { emailRedirectTo: 'https://pepsufkvgfwymtmrjkna.supabase.co/auth/v1/callback' },
         });
-        if (error) throw error;
+        if (error) {
+          console.error('Signup error:', error);
+          throw error;
+        }
         if (data.user && !data.session) {
+          console.log('Email verification required');
           setMsg("Verification email sent. Confirm to finish setup.");
+          setBusy(false);
           return;
         }
+        console.log('Account created, promoting...');
         const done = await promoteIfPossible();
-        if (!done) setMsg("Account created. If not redirected, try again.");
+        if (!done) {
+          console.warn('Promotion failed or incomplete');
+          setMsg("Account created. If not redirected, try again.");
+        }
         return;
       }
 
       // signin
+      console.log('Signing in with email:', email);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (error) {
+        console.error('Signin error:', error);
+        throw error;
+      }
+      console.log('Signed in successfully, promoting...');
       const done = await promoteIfPossible();
-      if (!done) setMsg("Signed in. If not redirected, try again.");
+      if (!done) {
+        console.warn('Promotion failed or incomplete');
+        setMsg("Signed in. If not redirected, try again.");
+      }
     } catch (e: any) {
+      console.error('Submit error:', e);
       setError(e?.message ?? String(e));
     } finally {
       setBusy(false);
     }
   }, [canSubmit, email, password, mode, promoteIfPossible]);
 
-  // OAuth
+  // OAuth with localhost callback (Supabase handles PKCE automatically)
   const doOAuth = useCallback(async (provider: "google" | "github") => {
     setError(null);
     setMsg(null);
     setBusy(true);
     try {
-      // Use localhost for OAuth redirect (works better with Tauri)
-      const redirectUrl = 'http://localhost:1420';
+      console.log('Starting OAuth with localhost callback...');
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      // Step 1: Start OAuth callback server
+      const port = await invoke<number>('start_oauth_server');
+      console.log('OAuth server started on port:', port);
+
+      // Step 2: Build OAuth URL with localhost redirect
+      const redirectUrl = `http://localhost:${port}`;
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
+          skipBrowserRedirect: true,
           redirectTo: redirectUrl,
-          queryParams: { prompt: "select_account" }
+          queryParams: {
+            prompt: "select_account"
+          }
         },
       });
+
       if (error) throw error;
-      setMsg("Opening provider… After signing in, you may need to refresh the app.");
+
+      console.log('OAuth URL generated:', data?.url);
+
+      // Step 3: Open OAuth URL in user's default browser (using Tauri shell)
+      if (data?.url) {
+        console.log('Opening OAuth URL in browser...');
+        await open(data.url);
+        console.log('Browser opened successfully');
+      }
+
+      // Step 4: Listen for callback from localhost server
+      const unlisten = await listen<string>('oauth-callback', async (event) => {
+        console.log('OAuth callback received:', event.payload);
+
+        try {
+          // Extract code from callback URL
+          const url = new URL(event.payload);
+          const code = url.searchParams.get('code');
+
+          if (!code) {
+            throw new Error('No authorization code in callback URL');
+          }
+
+          console.log('Authorization code received, exchanging for session...');
+
+          // Exchange code for session (Supabase handles PKCE verification)
+          const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+          if (exchangeError) {
+            console.error('Failed to exchange code:', exchangeError);
+            throw exchangeError;
+          }
+
+          console.log('Session obtained successfully!');
+
+          // Clean up listener
+          unlisten();
+
+          // Promote account
+          if (sessionData.session?.access_token) {
+            console.log('Promoting account...');
+            await promoteAccount(sessionData.session.access_token);
+            const userState = await getUserState();
+            setWaitingForOAuth(false);
+            onSessionCreated(userState);
+          }
+
+        } catch (callbackError: any) {
+          console.error('OAuth callback error:', callbackError);
+          setError(callbackError.message || 'OAuth login failed');
+          setBusy(false);
+          setWaitingForOAuth(false);
+        }
+      });
+
+      // Show waiting state
+      setWaitingForOAuth(true);
+      setBusy(false);
+      setMsg("Complete sign-in in your browser. The app will automatically detect when you're done.");
+
     } catch (e: any) {
+      console.error('OAuth setup error:', e);
       setError(e?.message ?? String(e));
       setBusy(false);
+      setWaitingForOAuth(false);
     }
-    // Don't set busy to false here - let the auth callback handle it
-  }, []);
+  }, [promoteAccount, getUserState, onSessionCreated]);
 
   const tryFinish = useCallback(async () => {
     setBusy(true);
     setError(null);
     setMsg(null);
     try {
-      const done = await promoteIfPossible();
-      if (!done) setMsg("No active session found yet. Complete the provider flow or sign in.");
+      // Check for Supabase session
+      console.log('Checking for Supabase session...');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      console.log('Session check result:', { session: !!session, error: sessionError, accessToken: session?.access_token?.substring(0, 20) });
+
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw sessionError;
+      }
+
+      if (!session?.access_token) {
+        console.warn('No session found in localStorage');
+        // Check localStorage directly
+        const storedSession = localStorage.getItem('roguegrid9-auth');
+        console.log('Direct localStorage check:', storedSession ? 'Found data' : 'No data');
+
+        setError("OAuth login doesn't work properly in Tauri yet. Please use email/password login instead, or sign in at https://app.roguegrid9.com and then refresh this app.");
+        setBusy(false);
+        return;
+      }
+
+      // We have a session! Promote the account
+      console.log('Found Supabase session, promoting account...');
+      await promoteAccount(session.access_token);
+      const userState = await getUserState();
+
+      // Success! Clear waiting state and move to app
+      setWaitingForOAuth(false);
+      onSessionCreated(userState);
+
     } catch (e: any) {
+      console.error('tryFinish error:', e);
       setError(e?.message ?? String(e));
     } finally {
       setBusy(false);
     }
-  }, [promoteIfPossible]);
+  }, [promoteAccount, getUserState, onSessionCreated]);
 
   // Show loading screen while checking for existing auth
   if (isCheckingAuth) {
@@ -357,7 +519,31 @@ export default function Welcome({
         {error && <div className={classes.alertErr}>{error}</div>}
         {msg && !error && <div className={classes.alertInfo}>{msg}</div>}
 
-        {!showUsernameStep && (
+        {/* Waiting for OAuth completion */}
+        {waitingForOAuth && !showUsernameStep && (
+          <div className="grid gap-4 text-center">
+            <div className="flex justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            </div>
+            <p className="text-gray-300 text-sm">
+              Waiting for sign-in to complete in your browser...
+              <br />
+              <span className="text-xs text-gray-400">This should happen automatically</span>
+            </p>
+            <button
+              onClick={() => {
+                setWaitingForOAuth(false);
+                setMsg(null);
+                setError(null);
+              }}
+              className={classes.tinyBtn}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {!showUsernameStep && !waitingForOAuth && (
           <>
             {/* OAuth and Account Creation */}
             <div className="grid gap-3 text-left">

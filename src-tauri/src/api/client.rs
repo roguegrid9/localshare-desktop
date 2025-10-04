@@ -1139,27 +1139,34 @@ impl CoordinatorClient {
     
     /// Check username availability
     pub async fn check_username_availability(&self, username: String) -> Result<CheckUsernameAvailabilityResponse> {
-        let url = format!("{}/api/v1/users/username/check?username={}", 
-                         self.base_url, 
+        let url = format!("{}/api/v1/users/username/check?username={}",
+                         self.base_url,
                          urlencoding::encode(&username));
-        
-        let response = self.client
+
+        // Use shorter timeout for username checks (5 seconds instead of 30)
+        let client_with_timeout = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .danger_accept_invalid_certs(true)
+            .build()
+            .context("Failed to create HTTP client")?;
+
+        let response = client_with_timeout
             .get(&url)
             .send()
             .await
-            .context("Failed to check username availability")?;
-        
+            .context("Failed to check username availability - server may be unreachable")?;
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             anyhow::bail!("Username availability check failed with status {}: {}", status, body);
         }
-        
+
         let availability_response: CheckUsernameAvailabilityResponse = response
             .json()
             .await
             .context("Failed to parse username availability response")?;
-        
+
         Ok(availability_response)
     }
     

@@ -90,8 +90,23 @@ pub async fn check_username_availability(username: String) -> Result<CheckUserna
 
     // Check with server
     let coordinator = CoordinatorClient::new();
-    coordinator.check_username_availability(username).await
-        .context("Failed to check username availability with server")
+    log::info!("Checking username availability with server: {}", username);
+
+    match coordinator.check_username_availability(username.clone()).await {
+        Ok(response) => {
+            log::info!("Username '{}' availability: {}", username, response.available);
+            Ok(response)
+        }
+        Err(e) => {
+            log::warn!("Failed to check username availability for '{}': {}. Assuming available for now - server will validate on update.", username, e);
+            // If the server check fails (timeout, network error, etc), assume available
+            // The server will do the final validation when the username is actually set
+            Ok(CheckUsernameAvailabilityResponse {
+                available: true,
+                message: format!("Could not verify availability ({}), but you can try it", e),
+            })
+        }
+    }
 }
 
 /// Promote account with optional username
