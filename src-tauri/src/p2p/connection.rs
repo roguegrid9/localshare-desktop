@@ -1133,6 +1133,8 @@ impl P2PConnection {
         let is_host = self.is_host;
         let app_handle_dc = self.app_handle.clone();
         let bytes_received_arc = self.bytes_received.clone();
+        let transport_configs_arc = self.transport_configs.clone();
+        let active_transports_arc = self.active_transports.clone();
 
         peer_connection.on_data_channel(Box::new(move |d: Arc<RTCDataChannel>| {
             let data_channel_arc = data_channel_arc.clone();
@@ -1140,7 +1142,9 @@ impl P2PConnection {
             let grid_id = grid_id_dc.clone();
             let process_manager = process_manager.clone();
             let app_handle = app_handle_dc.clone();
-            let bytes_received = bytes_received_arc.clone(); 
+            let bytes_received = bytes_received_arc.clone();
+            let transport_configs = transport_configs_arc.clone();
+            let active_transports = active_transports_arc.clone();
 
             Box::pin(async move {
                 log::info!(
@@ -1153,6 +1157,62 @@ impl P2PConnection {
                 {
                     let mut dc_guard = data_channel_arc.lock().await;
                     *dc_guard = Some(d.clone());
+                }
+
+                // Start any pending transports now that the data channel is open
+                let pending_configs = {
+                    let mut configs = transport_configs.lock().await;
+                    configs.drain(..).collect::<Vec<_>>()
+                };
+
+                for config in pending_configs {
+                    log::info!("Starting pending transport: {:?}", config);
+
+                    // Create transport instance
+                    match create_transport(config.clone()) {
+                        Ok(mut transport) => {
+                            // Start the transport
+                            match transport.start(d.clone()).await {
+                                Ok(local_port) => {
+                                    // Get connection info
+                                    let connection_info = transport.get_connection_info();
+
+                                    // Store the transport
+                                    let transport_id = format!("{}_{}", config.grid_id, config.process_id);
+                                    {
+                                        let mut transports = active_transports.lock().await;
+                                        transports.insert(transport_id.clone(), transport);
+                                    }
+
+                                    // Emit transport started event to frontend
+                                    if let Err(e) = app_handle.emit(
+                                        "transport_started",
+                                        &serde_json::json!({
+                                            "transport_id": transport_id,
+                                            "grid_id": config.grid_id,
+                                            "process_id": config.process_id,
+                                            "connection_info": connection_info,
+                                            "local_port": local_port
+                                        }),
+                                    ) {
+                                        log::error!("Failed to emit transport_started event: {}", e);
+                                    }
+
+                                    log::info!(
+                                        "Transport {} started successfully on port {}",
+                                        transport_id,
+                                        local_port
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to start transport: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create transport: {}", e);
+                        }
+                    }
                 }
 
                 // Enhanced message handler with transport routing
