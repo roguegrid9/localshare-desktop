@@ -363,15 +363,15 @@ impl P2PManager {
                 .context("Failed to send session accept")?;
         }
 
-        // Create guest connection - fixed variable names and parameters
+        // Create host connection (we're the host accepting a guest's invite)
         let session_id = Uuid::new_v4().to_string();
-        let connection = P2PConnection::new_guest(
-            session_id.clone(), 
-            from_user_id.clone(), // Fixed: was host_user_id.clone()
+        let connection = P2PConnection::new_host(
+            session_id.clone(),
+            from_user_id.clone(),
             grid_id.clone(),
             self.app_handle.clone(),
             None, // Process manager
-            None  // Fixed: removed the media_manager line, just pass None
+            None  // Media manager
         ).await?;
 
         // Set up signal sender
@@ -379,8 +379,8 @@ impl P2PManager {
             connection.set_signal_sender(sender.clone()).await;
         }
 
-        // Start WebRTC connection
-        connection.start_connection().await?;
+        // Don't call start_connection() - host waits for guest's offer
+        // The guest will send an offer, and we'll respond via handle_webrtc_signal
 
         // Store connection using grid:user key for host connections
         let connection_key = format!("{}:{}", grid_id, from_user_id);
