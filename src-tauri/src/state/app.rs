@@ -41,6 +41,7 @@ pub struct AppState {
     pub share_connection_manager: Arc<Mutex<Option<ShareConnectionManager>>>,
     pub user: Arc<Mutex<UserState>>,
     pub shared_processes: Arc<Mutex<HashMap<String, SharedProcess>>>,
+    pub shared_process_heartbeats: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>, // process_id -> heartbeat task
     pub auth_token: Arc<Mutex<Option<String>>>,
 }
 
@@ -67,6 +68,7 @@ impl AppState {
                 is_authenticated: false,
             })),
             shared_processes: Arc::new(Mutex::new(HashMap::new())),
+            shared_process_heartbeats: Arc::new(Mutex::new(HashMap::new())),
             auth_token: Arc::new(Mutex::new(None)),
         }
     }

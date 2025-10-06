@@ -1080,8 +1080,26 @@ impl P2PConnection {
                             }
                             SessionState::Connected
                         }
-                        RTCPeerConnectionState::Disconnected => SessionState::Disconnected,
-                        RTCPeerConnectionState::Failed => SessionState::Failed,
+                        RTCPeerConnectionState::Disconnected => {
+                            log::warn!("P2P connection disconnected for grid: {}", grid_id);
+                            // Emit host disconnected event for UI
+                            app_handle.emit("host_disconnected", &serde_json::json!({
+                                "grid_id": grid_id,
+                                "session_id": session_id,
+                                "reason": "peer_disconnected"
+                            })).ok();
+                            SessionState::Disconnected
+                        }
+                        RTCPeerConnectionState::Failed => {
+                            log::error!("P2P connection failed for grid: {}", grid_id);
+                            // Emit host disconnected event with failure reason
+                            app_handle.emit("host_disconnected", &serde_json::json!({
+                                "grid_id": grid_id,
+                                "session_id": session_id,
+                                "reason": "connection_failed"
+                            })).ok();
+                            SessionState::Failed
+                        }
                         RTCPeerConnectionState::Connecting => SessionState::Connecting,
                         _ => return,
                     };

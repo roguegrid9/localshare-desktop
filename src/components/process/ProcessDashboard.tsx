@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   Activity,
   Play,
@@ -15,6 +16,7 @@ import {
   Info
 } from 'lucide-react';
 import type { ProcessDashboard as ProcessDashboardType } from '../../types/dashboard';
+import type { ProcessAvailability, LocalProcessStatus } from '../../types/process';
 
 interface ProcessDashboardProps {
   processId: string;
@@ -50,14 +52,50 @@ function ErrorState({ message }: { message: string }) {
 
 function DashboardHeader({
   name,
-  status
+  status,
+  availability
 }: {
   name: string;
   status: string;
+  availability?: ProcessAvailability;
 }) {
   const StatusIcon = status === 'running' ? Play : Square;
   const statusColor = status === 'running' ? 'text-green-400' : 'text-red-400';
   const statusText = status === 'running' ? 'Running' : 'Stopped';
+
+  // Determine local status badge
+  const getLocalStatusBadge = () => {
+    if (!availability) return null;
+
+    const { local_status, host_display_name } = availability;
+
+    switch (local_status) {
+      case 'hosting':
+        return (
+          <span className="text-sm px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1.5">
+            <Server className="w-3.5 h-3.5" />
+            Hosting
+          </span>
+        );
+      case 'connected':
+        return (
+          <span className="text-sm px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
+            <Share2 className="w-3.5 h-3.5" />
+            Connected
+          </span>
+        );
+      case 'available':
+        return (
+          <span className="text-sm px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 flex items-center gap-1.5">
+            <Cloud className="w-3.5 h-3.5" />
+            Available from {host_display_name || 'host'}
+          </span>
+        );
+      case 'unavailable':
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="border-b border-white/10 pb-4 mb-6">
@@ -69,6 +107,7 @@ function DashboardHeader({
               <StatusIcon className="w-5 h-5" />
               {statusText}
             </span>
+            {getLocalStatusBadge()}
           </h1>
         </div>
       </div>
@@ -192,17 +231,20 @@ function StoppedState({ dashboard }: { dashboard: ProcessDashboardType }) {
 function P2PConnectionSection({
   dashboard,
   gridId,
-  processId
+  processId,
+  availability
 }: {
   dashboard: ProcessDashboardType;
   gridId: string;
   processId: string;
+  availability?: ProcessAvailability;
 }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
   const [transportId, setTransportId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [connectionId, setConnectionId] = useState<string | null>(null);
 
   // Auto-host the grid when component loads
   useEffect(() => {
@@ -217,17 +259,99 @@ function P2PConnectionSection({
     ensureGridHosted();
   }, [gridId]);
 
-  // Auto-share the process when it's running
+  // Listen for transport_started event to get the actual local port
   useEffect(() => {
-    if (dashboard.status === 'running' && connectionStatus === 'disconnected') {
-      // Small delay to ensure grid hosting is established
+    let unlisten: (() => void) | null = null;
+
+    listen('transport_started', (event: any) => {
+      const data = event.payload;
+      console.log('Transport started event received:', data);
+
+      // Check if this transport is for our process
+      if (data.process_id === processId && data.grid_id === gridId) {
+        setConnectionUrl(`localhost:${data.local_port}`);
+        setTransportId(data.transport_id);
+        setConnectionStatus('connected');
+        console.log(`Transport tunnel ready on localhost:${data.local_port}`);
+      }
+    }).then(fn => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [processId, gridId]);
+
+  // Auto-connect for guests only (hosts don't need P2P connection to their own process)
+  useEffect(() => {
+    if (availability?.local_status === 'available' &&
+        availability?.is_connectable &&
+        connectionStatus === 'disconnected' &&
+        !isConnecting) {
+      // Small delay to ensure availability is fully loaded
       const timer = setTimeout(() => {
-        handleConnect();
+        handleConnectAsGuest();
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [dashboard.status]);
+  }, [availability?.local_status, availability?.is_connectable]);
 
+  // Handle connecting to a remote process as guest
+  const handleConnectAsGuest = async () => {
+    setIsConnecting(true);
+    setConnectionStatus('connecting');
+    setErrorMessage(null);
+
+    try {
+      // Connect to process - this will:
+      // 1. Establish P2P connection to host
+      // 2. Register connection in database
+      // 3. Start transport tunnel for port forwarding (async)
+      const result = await invoke<any>('connect_to_process', {
+        gridId,
+        processId,
+        localPort: null, // Let the system choose
+      });
+
+      setConnectionId(result.connection_id);
+      setErrorMessage(null);
+
+      // Don't set to 'connected' yet - wait for transport_started event
+      // which will provide the actual local port
+      console.log('Connection initiated, waiting for transport to start...', result);
+    } catch (error) {
+      console.error('Failed to connect to process:', error);
+      const errorMsg = String(error);
+      setErrorMessage(errorMsg);
+      setConnectionStatus('disconnected');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // Handle disconnecting from a remote process
+  const handleDisconnect = async () => {
+    if (!connectionId) return;
+
+    try {
+      // Disconnect from process - this will clean up the transport tunnel too
+      await invoke('disconnect_from_process', {
+        gridId,
+        processId,
+        connectionId,
+      });
+
+      setConnectionId(null);
+      setConnectionUrl(null);
+      setConnectionStatus('disconnected');
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
+      setErrorMessage(String(error));
+    }
+  };
+
+  // Original host connection logic
   const handleConnect = async () => {
     setIsConnecting(true);
     setConnectionStatus('connecting');
@@ -259,17 +383,64 @@ function P2PConnectionSection({
     }
   };
 
+  // Determine if we're hosting or available to connect
+  const isHosting = availability?.local_status === 'hosting';
+  const isAvailable = availability?.local_status === 'available' && availability?.is_connectable;
+  const isConnected = availability?.local_status === 'connected';
+
   return (
-    <Section title={<div className="flex items-center gap-2"><Share2 className="w-4 h-4" />P2P Connection (Auto-Share)</div>}>
-      <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-6">
+    <Section title={
+      <div className="flex items-center gap-2">
+        <Share2 className="w-4 h-4" />
+        {isHosting ? 'Hosting Process' : isAvailable ? 'Remote Process Available' : 'P2P Connection'}
+      </div>
+    }>
+      <div className={`rounded-lg border p-6 ${
+        isHosting ? 'border-blue-500/20 bg-blue-500/10' :
+        isAvailable ? 'border-yellow-500/20 bg-yellow-500/10' :
+        isConnected ? 'border-purple-500/20 bg-purple-500/10' :
+        'border-blue-500/20 bg-blue-500/10'
+      }`}>
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-            <Server className="w-5 h-5 text-blue-400" />
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            isHosting ? 'bg-blue-500/20' :
+            isAvailable ? 'bg-yellow-500/20' :
+            isConnected ? 'bg-purple-500/20' :
+            'bg-blue-500/20'
+          }`}>
+            <Server className={`w-5 h-5 ${
+              isHosting ? 'text-blue-400' :
+              isAvailable ? 'text-yellow-400' :
+              isConnected ? 'text-purple-400' :
+              'text-blue-400'
+            }`} />
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-blue-300 mb-2">Connect to Process</h3>
-            <p className="text-sm text-blue-200/80 mb-4">
-              This process is automatically shared via P2P networking when running. Grid members can access it directly through encrypted peer-to-peer connections.
+            <h3 className={`font-semibold mb-2 ${
+              isHosting ? 'text-blue-300' :
+              isAvailable ? 'text-yellow-300' :
+              isConnected ? 'text-purple-300' :
+              'text-blue-300'
+            }`}>
+              {isHosting ? 'You are hosting this process' :
+               isAvailable ? `Available from ${availability.host_display_name || 'another user'}` :
+               isConnected ? 'Connected to remote process' :
+               'Connect to Process'}
+            </h3>
+            <p className={`text-sm mb-4 ${
+              isHosting ? 'text-blue-200/80' :
+              isAvailable ? 'text-yellow-200/80' :
+              isConnected ? 'text-purple-200/80' :
+              'text-blue-200/80'
+            }`}>
+              {isHosting
+                ? 'This process is running on your machine and is accessible to grid members via P2P.'
+                : isAvailable
+                ? `This process is running on ${availability.host_display_name || "another user's"} machine. Click connect to access it locally.`
+                : isConnected
+                ? 'You are connected to a remote process. Access it via the local port below.'
+                : 'This process is automatically shared via P2P networking when running. Grid members can access it directly through encrypted peer-to-peer connections.'
+              }
             </p>
 
             {/* Connection Status */}
@@ -309,7 +480,34 @@ function P2PConnectionSection({
             </div>
 
             {/* Action Buttons */}
-            {connectionStatus !== 'connected' && (
+            {isAvailable && !isConnected && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleConnectAsGuest}
+                  disabled={isConnecting}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                    isConnecting
+                      ? 'bg-yellow-600/50 text-yellow-300 cursor-wait'
+                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                  }`}
+                >
+                  {isConnecting ? 'Connecting...' : 'Connect to Process'}
+                </button>
+              </div>
+            )}
+
+            {isConnected && connectionId && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDisconnect}
+                  className="px-4 py-2 rounded-lg font-medium text-sm transition-all bg-red-600 text-white hover:bg-red-700"
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+
+            {isHosting && connectionStatus !== 'connected' && (
               <div className="flex gap-2">
                 <button
                   onClick={handleConnect}
@@ -370,10 +568,11 @@ function ComingSoonSection() {
 
 export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
   const [dashboard, setDashboard] = useState<ProcessDashboardType | null>(null);
+  const [availability, setAvailability] = useState<ProcessAvailability | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout>();
-  
+
   const loadDashboard = useCallback(async (isInitial = false) => {
     try {
       if (isInitial) {
@@ -382,12 +581,19 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
       }
       
       // Get process information from multiple sources
-      const [processInfo, sharedProcesses, processDisplayName] = await Promise.all([
+      const [processInfo, sharedProcesses, processDisplayName, processAvailability] = await Promise.all([
         invoke<any>('get_process_info', { processId }).catch(() => null),
         invoke<any[]>('get_grid_shared_processes', { gridId }).catch(() => []),
-        invoke<string>('get_process_display_name', { processId }).catch(() => processId.slice(0, 8))
+        invoke<string>('get_process_display_name', { processId }).catch(() => processId.slice(0, 8)),
+        invoke<ProcessAvailability | null>('get_process_availability', { gridId, processId }).catch(() => null)
       ]);
-      
+
+      // Update availability state
+      setAvailability(processAvailability);
+
+      // DEBUG: Log availability data
+      console.log('🔍 AVAILABILITY DATA:', processAvailability);
+
       // Find the shared process data
       const sharedProcess = sharedProcesses.find(p => p.id === processId);
 
@@ -419,10 +625,19 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
       let status: 'running' | 'stopped' | 'error' = 'stopped';
       let currentPid = processInfo?.status?.pid || sharedProcess?.config?.pid || 0;
 
+      // Determine status based on whether this is a local or remote process
+      const isRemoteProcess = processAvailability?.local_status === 'available' ||
+                              processAvailability?.local_status === 'connected';
+
       if (processInfo) {
+        // Local process - use process manager status
         status = processInfo.status?.state === 'Running' ? 'running' : 'stopped';
+      } else if (isRemoteProcess) {
+        // Remote process - use grid_status from availability
+        status = processAvailability?.grid_status === 'hosted' ? 'running' : 'stopped';
+        console.log(`Remote process status from grid: ${status} (grid_status: ${processAvailability?.grid_status})`);
       } else if (sharedProcess) {
-        // Check actual health by monitoring the port
+        // Local shared process - check actual health by monitoring the port
         const port = sharedProcess.config?.port;
 
         if (port) {
@@ -536,6 +751,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
       <DashboardHeader
         name={dashboard.name}
         status={dashboard.status}
+        availability={availability || undefined}
       />
 
       {dashboard.status === 'running' ? (
@@ -554,6 +770,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         dashboard={dashboard}
         gridId={gridId}
         processId={processId}
+        availability={availability || undefined}
       />
 
       <ComingSoonSection />

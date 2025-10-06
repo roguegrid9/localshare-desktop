@@ -302,14 +302,64 @@ impl CoordinatorClient {
 
     pub async fn register_grid_process(&self, token: &str, grid_id: String, request: serde_json::Value) -> Result<(), anyhow::Error> {
         let url = format!("{}/api/grids/{}/processes", self.base_url, grid_id);
-        // Implementation here - make HTTP POST request
-        Ok(())
+
+        log::info!("Registering grid process: {:?}", request);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to register grid process")?;
+
+        let status = response.status();
+
+        if status.is_success() {
+            log::info!("Successfully registered grid process");
+            Ok(())
+        } else {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            log::error!("Failed to register grid process with status {}: {}", status, error_text);
+            anyhow::bail!("Failed to register grid process ({}): {}", status, error_text);
+        }
     }
 
     pub async fn update_process_status(&self, token: &str, grid_id: String, request: serde_json::Value) -> Result<(), anyhow::Error> {
         let url = format!("{}/api/grids/{}/processes/status", self.base_url, grid_id);
-        // Implementation here - make HTTP PUT request
-        Ok(())
+
+        log::debug!("Updating process status: {:?}", request);
+
+        let response = self
+            .client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to update process status")?;
+
+        let status = response.status();
+
+        if status.is_success() {
+            log::debug!("Successfully updated process status");
+            Ok(())
+        } else {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            log::error!("Failed to update process status with status {}: {}", status, error_text);
+            anyhow::bail!("Failed to update process status ({}): {}", status, error_text);
+        }
     }
     
     // Grid API methods (replaces friend methods)
@@ -676,7 +726,7 @@ impl CoordinatorClient {
 
     pub async fn send_grid_heartbeat(&self, token: &str, grid_id: String) -> Result<()> {
         let url = format!("{}/api/v1/grids/{}/heartbeat", self.base_url, grid_id);
-        
+
         // Don't log every heartbeat to avoid spam
         let response = self
             .client
@@ -687,15 +737,42 @@ impl CoordinatorClient {
             .context("Failed to send heartbeat")?;
 
         let status = response.status();
-        
+
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            
+
             log::error!("Failed to send heartbeat with status {}: {}", status, error_text);
             anyhow::bail!("Failed to send heartbeat ({}): {}", status, error_text);
+        }
+
+        Ok(())
+    }
+
+    pub async fn send_process_heartbeat(&self, token: &str, grid_id: String, process_id: String) -> Result<()> {
+        let url = format!("{}/api/v1/grids/{}/processes/{}/heartbeat", self.base_url, grid_id, process_id);
+
+        // Don't log every heartbeat to avoid spam
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .context("Failed to send process heartbeat")?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            log::error!("Failed to send process heartbeat with status {}: {}", status, error_text);
+            anyhow::bail!("Failed to send process heartbeat ({}): {}", status, error_text);
         }
 
         Ok(())
@@ -2042,5 +2119,124 @@ impl CoordinatorClient {
 
         log::info!("Successfully reported bandwidth usage for grid: {}", grid_id);
         Ok(())
+    }
+
+    // ============================================================================
+    // Process Connection Methods (Guest Connection Flow)
+    // ============================================================================
+
+    /// Connect to a process as a guest
+    pub async fn connect_to_process(
+        &self,
+        token: &str,
+        grid_id: &str,
+        process_id: &str,
+        local_port: Option<u16>,
+    ) -> Result<serde_json::Value> {
+        log::info!("Connecting to process {} in grid {}", process_id, grid_id);
+
+        let request_body = serde_json::json!({
+            "local_port": local_port,
+        });
+
+        let response = self
+            .client
+            .post(&format!(
+                "{}/api/v1/grids/{}/processes/{}/connect",
+                self.base_url, grid_id, process_id
+            ))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to connect to process")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to connect to process ({}): {}", status, error_text);
+        }
+
+        let connection_info: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse connection response")?;
+
+        log::info!("Successfully connected to process: {}", process_id);
+        Ok(connection_info)
+    }
+
+    /// Disconnect from a process
+    pub async fn disconnect_from_process(
+        &self,
+        token: &str,
+        grid_id: &str,
+        process_id: &str,
+        connection_id: &str,
+    ) -> Result<()> {
+        log::info!(
+            "Disconnecting from process {} in grid {}",
+            process_id,
+            grid_id
+        );
+
+        let response = self
+            .client
+            .delete(&format!(
+                "{}/api/v1/grids/{}/processes/{}/connections/{}",
+                self.base_url, grid_id, process_id, connection_id
+            ))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .context("Failed to disconnect from process")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to disconnect from process ({}): {}", status, error_text);
+        }
+
+        log::info!("Successfully disconnected from process: {}", process_id);
+        Ok(())
+    }
+
+    /// Get process availability status
+    pub async fn get_process_availability(
+        &self,
+        token: &str,
+        grid_id: &str,
+        process_id: &str,
+    ) -> Result<serde_json::Value> {
+        log::info!("Getting availability for process {} in grid {}", process_id, grid_id);
+
+        let response = self
+            .client
+            .get(&format!(
+                "{}/api/v1/grids/{}/processes/{}/availability",
+                self.base_url, grid_id, process_id
+            ))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .context("Failed to get process availability")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to get process availability ({}): {}",
+                status,
+                error_text
+            );
+        }
+
+        let availability: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse availability response")?;
+
+        log::info!("Successfully retrieved process availability: {}", serde_json::to_string_pretty(&availability).unwrap_or_else(|_| "failed to serialize".to_string()));
+        Ok(availability)
     }
 }

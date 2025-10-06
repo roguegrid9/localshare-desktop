@@ -193,17 +193,140 @@ impl ProcessInfo {
             if self.config.args.len() >= 3 {
                 return self.config.args[2].clone();
             }
-            
+
             // Try to get name from environment variables
             if let Some(name) = self.config.env_vars.get("TERMINAL_NAME") {
                 return name.clone();
             }
-            
+
             // Fallback to process ID
             return format!("Terminal {}", &self.process_id[0..8]);
         }
-        
+
         // For other processes, use the process ID
         self.process_id.clone()
+    }
+}
+
+// ============================================================================
+// New Types for Host/Guest Process Availability
+// ============================================================================
+
+/// Registration state for process sync with backend
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrationState {
+    Pending,      // Just started, registration in progress
+    Registered,   // Successfully registered with backend
+    Failed,       // Registration failed, will retry
+    LocalOnly,    // Gave up on registration, process is local-only
+}
+
+/// Grid-level process status (what's available in the grid)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GridProcessStatus {
+    Hosted,    // Process is being hosted by someone
+    Orphaned,  // Host disconnected, process needs new host
+    Inactive,  // Process is not running anywhere
+}
+
+/// Local process status (what's happening on THIS machine)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalProcessStatus {
+    Hosting,    // This machine is hosting the process
+    Connected,  // Connected to remote host as guest
+    Available,  // Available to connect (hosted elsewhere)
+    Unavailable, // Not available (no active host)
+}
+
+/// Complete process availability information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessAvailability {
+    pub process_id: String,
+    pub grid_id: String,
+
+    // Grid-level state
+    pub grid_status: GridProcessStatus,
+    pub host_user_id: Option<String>,
+    pub host_display_name: Option<String>,
+    pub active_connections: u32,
+
+    // Local state
+    pub local_status: LocalProcessStatus,
+    pub local_port: Option<u16>,  // If connected/hosting, which local port
+
+    // Connection metadata
+    pub connection_id: Option<String>,  // If connected as guest
+    pub is_connectable: bool,
+    pub last_heartbeat_at: Option<String>,  // Changed from u64 to String to match backend timestamp format
+}
+
+/// Process registration retry state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistrationRetry {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub next_retry_at: u64, // Unix timestamp
+}
+
+/// Extended process info with availability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtendedProcessInfo {
+    #[serde(flatten)]
+    pub process_info: ProcessInfo,
+    pub availability: ProcessAvailability,
+    pub registration_state: RegistrationState,
+    pub registration_retry: Option<RegistrationRetry>,
+}
+
+impl Default for ProcessAvailability {
+    fn default() -> Self {
+        Self {
+            process_id: String::new(),
+            grid_id: String::new(),
+            grid_status: GridProcessStatus::Inactive,
+            host_user_id: None,
+            host_display_name: None,
+            active_connections: 0,
+            local_status: LocalProcessStatus::Unavailable,
+            local_port: None,
+            connection_id: None,
+            is_connectable: false,
+            last_heartbeat_at: None,
+        }
+    }
+}
+
+impl std::fmt::Display for LocalProcessStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LocalProcessStatus::Hosting => write!(f, "hosting"),
+            LocalProcessStatus::Connected => write!(f, "connected"),
+            LocalProcessStatus::Available => write!(f, "available"),
+            LocalProcessStatus::Unavailable => write!(f, "unavailable"),
+        }
+    }
+}
+
+impl std::fmt::Display for GridProcessStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GridProcessStatus::Hosted => write!(f, "hosted"),
+            GridProcessStatus::Orphaned => write!(f, "orphaned"),
+            GridProcessStatus::Inactive => write!(f, "inactive"),
+        }
+    }
+}
+
+impl std::fmt::Display for RegistrationState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RegistrationState::Pending => write!(f, "pending"),
+            RegistrationState::Registered => write!(f, "registered"),
+            RegistrationState::Failed => write!(f, "failed"),
+            RegistrationState::LocalOnly => write!(f, "local_only"),
+        }
     }
 }

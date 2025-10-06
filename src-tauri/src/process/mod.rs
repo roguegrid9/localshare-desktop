@@ -2,6 +2,8 @@
 
 pub mod types;
 pub mod manager;
+pub mod port_detection;
+pub mod discovered_monitor;
 pub mod terminal_process;
 
 pub use manager::ProcessManager;

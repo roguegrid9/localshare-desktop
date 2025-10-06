@@ -971,6 +971,12 @@ export function useTauriCommands() {
     return await invoke('find_available_port');
   }, []);
 
+  // ===== PROCESS HEARTBEATS =====
+
+  const resumeHeartbeatsAfterAuth = useCallback(async (): Promise<void> => {
+    return await invoke('resume_heartbeats_after_auth');
+  }, []);
+
   // ===== RETURN MEMOIZED OBJECT =====
   
   return useMemo(() => ({
@@ -1108,6 +1114,9 @@ export function useTauriCommands() {
     checkDockerAvailable,
     findAvailablePort,
 
+    // Process heartbeats
+    resumeHeartbeatsAfterAuth,
+
   }), [
     // Dependencies for useMemo - all the useCallback functions
     initializeApp,
@@ -1218,5 +1227,6 @@ export function useTauriCommands() {
     getVoiceChannelStatus,
     checkDockerAvailable,
     findAvailablePort,
+    resumeHeartbeatsAfterAuth,
   ]);
 }

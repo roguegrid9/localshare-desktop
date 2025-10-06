@@ -40,7 +40,7 @@ function AppContent() {
   const handleSessionCreated = async (newUserState: UserState) => {
     console.log('User authenticated successfully:', newUserState)
     setUserState(newUserState)
-    
+
     // Connect WebSocket after successful authentication
     try {
       const { invoke } = await import('@tauri-apps/api/core')
@@ -49,7 +49,7 @@ function AppContent() {
     } catch (error) {
       console.warn('Failed to connect WebSocket after authentication:', error)
     }
-    
+
     try {
       console.log('🚀 Starting container reconciliation after authentication...')
       const reconciliationResult = await invoke('reconcile_containers_on_startup')
@@ -64,6 +64,15 @@ function AppContent() {
       console.log('Messaging service reinitialized after authentication')
     } catch (error) {
       console.warn('Failed to reinitialize messaging service after authentication:', error)
+    }
+
+    // Resume heartbeats for all owned shared processes
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('resume_heartbeats_after_auth')
+      console.log('✅ Process heartbeats resumed after authentication')
+    } catch (error) {
+      console.warn('Failed to resume process heartbeats after authentication:', error)
     }
     // Check if username is required for authenticated users
     // Remove the connectionStatus check since we know the user just authenticated successfully

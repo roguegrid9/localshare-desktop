@@ -248,6 +248,13 @@ pub fn run() {
                     if let Err(e) = initialize_media_manager(app_handle.clone(), state.clone()).await {
                         log::error!("Failed to initialize media manager: {}", e);
                     }
+
+                    // Resume heartbeats - MOVED to frontend call after authentication
+                    // Frontend will call resume_heartbeats_after_auth() after OAuth completes
+                    // if let Err(e) = crate::commands::process::resume_all_shared_process_heartbeats(state.clone()).await {
+                    //     log::error!("Failed to resume shared process heartbeats: {}", e);
+                    // }
+
                     log::info!("All services initialized successfully");
                     Ok(())
                 }
@@ -299,6 +306,10 @@ pub fn run() {
             get_grid_shared_processes,
             start_p2p_sharing,
             stop_p2p_sharing,
+            get_process_availability,
+            connect_to_process,
+            disconnect_from_process,
+            resume_heartbeats_after_auth,
 
             // ============================================================================
             // PROCESS DISCOVERY COMMANDS

@@ -403,9 +403,15 @@ pub async fn create_shared_process(
         log::warn!("Failed to start P2P sharing for process {}: {}", api_response.id, e);
         // Don't fail the entire operation if P2P sharing fails
     }
-    
+
+    // Start heartbeat for the process
+    if let Err(e) = start_process_heartbeat(api_response.id.clone(), grid_id.clone(), state.clone()).await {
+        log::error!("Failed to start heartbeat for process {}: {}", api_response.id, e);
+        // Don't fail if heartbeat fails, but this is concerning
+    }
+
     log::info!("Successfully created shared process: {} for grid: {}", api_response.id, grid_id);
-    
+
     Ok(api_response.id)
 }
 
@@ -571,6 +577,204 @@ pub async fn get_grid_shared_processes(
     }
 }
 
+// ===== HEARTBEAT HELPER FUNCTIONS =====
+
+/// Start a heartbeat task for a shared process
+async fn start_process_heartbeat(
+    process_id: String,
+    grid_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("🫀 Starting heartbeat for shared process {} in grid {}", process_id, grid_id);
+
+    let process_id_clone = process_id.clone();
+    let grid_id_clone = grid_id.clone();
+
+    let task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+        let mut heartbeat_count = 0u32;
+
+        loop {
+            interval.tick().await;
+            heartbeat_count += 1;
+
+            match send_process_heartbeat(&process_id_clone, &grid_id_clone).await {
+                Ok(_) => {
+                    // Log every 10th heartbeat (every 5 minutes)
+                    if heartbeat_count % 10 == 0 {
+                        log::info!("🫀 Shared process heartbeat #{} sent for process {}", heartbeat_count, &process_id_clone);
+                    }
+                }
+                Err(e) => {
+                    log::error!("❌ Shared process heartbeat #{} FAILED for process {}: {}", heartbeat_count, &process_id_clone, e);
+                }
+            }
+        }
+    });
+
+    let mut heartbeats = state.shared_process_heartbeats.lock().await;
+    heartbeats.insert(process_id.clone(), task);
+    log::info!("✅ Heartbeat task started for shared process: {}", process_id);
+
+    Ok(())
+}
+
+/// Stop a heartbeat task for a shared process
+async fn stop_process_heartbeat(
+    process_id: &str,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("🛑 Stopping heartbeat for shared process {}", process_id);
+
+    let mut heartbeats = state.shared_process_heartbeats.lock().await;
+    if let Some(task) = heartbeats.remove(process_id) {
+        task.abort();
+        log::info!("✅ Heartbeat task stopped for shared process: {}", process_id);
+    }
+
+    Ok(())
+}
+
+/// Send a single heartbeat for a shared process
+async fn send_process_heartbeat(process_id: &str, grid_id: &str) -> Result<(), String> {
+    use crate::auth::storage::get_user_session;
+    use crate::api::client::CoordinatorClient;
+
+    let session = get_user_session().await
+        .map_err(|e| format!("Failed to get user session: {}", e))?;
+
+    let token = session
+        .ok_or_else(|| "No active session".to_string())?
+        .token;
+
+    let client = CoordinatorClient::new();
+    client.send_process_heartbeat(&token, grid_id.to_string(), process_id.to_string())
+        .await
+        .map_err(|e| format!("Failed to send heartbeat: {}", e))?;
+
+    Ok(())
+}
+
+/// Resume heartbeats for all active shared processes (called after authentication)
+#[tauri::command]
+pub async fn resume_heartbeats_after_auth(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    resume_all_shared_process_heartbeats(state).await
+}
+
+/// Internal resume function for all active shared processes
+async fn resume_all_shared_process_heartbeats(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use crate::auth::storage::get_user_session;
+    use crate::api::client::CoordinatorClient;
+
+    log::info!("🔄 Resuming heartbeats for all shared processes...");
+
+    // Get user session
+    let session = match get_user_session().await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            log::info!("No user session found, skipping heartbeat resumption");
+            return Ok(());
+        }
+        Err(e) => {
+            log::error!("Failed to get user session: {}", e);
+            return Ok(());
+        }
+    };
+
+    // Fetch all grids from API
+    let client = CoordinatorClient::new();
+    let grids = match client.get_my_grids(&session.token).await {
+        Ok(response) => response.grids,
+        Err(e) => {
+            log::error!("Failed to fetch grids for heartbeat resumption: {}", e);
+            return Ok(());
+        }
+    };
+
+    log::info!("Fetched {} grids to check for shared processes", grids.len());
+
+    let mut total_processes = 0;
+
+    // For each grid, fetch shared processes and resume heartbeats
+    for grid in grids {
+        match client.get_grid_shared_processes(&session.token, &grid.id).await {
+            Ok(response) => {
+                log::info!("Grid {} has {} shared processes", grid.id, response.processes.len());
+
+                for process in response.processes {
+                    // Check if this user is the owner
+                    if process.user_id == session.user_id {
+                        log::info!("Resuming heartbeat for owned process {} in grid {}", process.id, grid.id);
+                        total_processes += 1;
+
+                        // Convert SharedProcessData to SharedProcess
+                        let shared_process = SharedProcess {
+                            id: process.id.clone(),
+                            grid_id: grid.id.clone(),
+                            user_id: process.user_id.clone(),
+                            config: SimpleProcessConfig {
+                                name: process.config.name.clone(),
+                                description: process.config.description.clone(),
+                                pid: process.config.pid as u32,
+                                port: process.config.port as u16,
+                                command: process.config.command.clone(),
+                                working_dir: process.config.working_dir.clone(),
+                                executable_path: process.config.executable_path.clone(),
+                                process_name: process.config.process_name.clone(),
+                            },
+                            status: match process.status.as_str() {
+                                "running" => SharedProcessStatus::Running,
+                                "stopped" => SharedProcessStatus::Stopped,
+                                _ => SharedProcessStatus::Error,
+                            },
+                            last_seen_at: process.last_seen_at.and_then(|dt| {
+                                use chrono::DateTime;
+                                DateTime::parse_from_rfc3339(&dt)
+                                    .ok()
+                                    .map(|dt| dt.timestamp() as u64)
+                            }),
+                            created_at: {
+                                use chrono::DateTime;
+                                DateTime::parse_from_rfc3339(&process.created_at)
+                                    .ok()
+                                    .map(|dt| dt.timestamp() as u64)
+                                    .unwrap_or(0)
+                            },
+                            updated_at: {
+                                use chrono::DateTime;
+                                DateTime::parse_from_rfc3339(&process.updated_at)
+                                    .ok()
+                                    .map(|dt| dt.timestamp() as u64)
+                                    .unwrap_or(0)
+                            },
+                        };
+
+                        {
+                            let mut shared_processes = state.shared_processes.lock().await;
+                            shared_processes.insert(process.id.clone(), shared_process);
+                        }
+
+                        // Start heartbeat
+                        if let Err(e) = start_process_heartbeat(process.id.clone(), grid.id.clone(), state.clone()).await {
+                            log::error!("Failed to resume heartbeat for process {}: {}", process.id, e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to fetch shared processes for grid {}: {}", grid.id, e);
+            }
+        }
+    }
+
+    log::info!("✅ Shared process heartbeat resumption complete - resumed {} processes", total_processes);
+    Ok(())
+}
+
 // Start P2P sharing for a process
 #[tauri::command]
 pub async fn start_p2p_sharing(
@@ -633,6 +837,87 @@ pub async fn stop_p2p_sharing(
     
     // TODO: Implement actual P2P sharing stop logic
     log::info!("Stopped P2P sharing for process: {}", process_id);
-    
+
+    // Stop the heartbeat
+    if let Err(e) = stop_process_heartbeat(&process_id, state.clone()).await {
+        log::error!("Failed to stop heartbeat for process {}: {}", process_id, e);
+    }
+
     Ok(())
+}
+
+// ============================================================================
+// Host/Guest Process Availability Commands
+// ============================================================================
+
+/// Get process availability status (host/guest info)
+#[tauri::command]
+pub async fn get_process_availability(
+    grid_id: String,
+    process_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::process::types::ProcessAvailability>, String> {
+    log::info!("Getting availability for process {} in grid {}", process_id, grid_id);
+
+    let p2p_state = state.p2p_manager.lock().await;
+    if let Some(p2p_manager) = p2p_state.as_ref() {
+        p2p_manager
+            .get_process_availability(grid_id, process_id)
+            .await
+            .map(|v| serde_json::from_value(v).ok())
+            .map_err(|e| e.to_string())
+    } else {
+        Err("P2P manager not initialized".to_string())
+    }
+}
+
+/// Connect to a remote process as guest
+#[tauri::command]
+pub async fn connect_to_process(
+    grid_id: String,
+    process_id: String,
+    local_port: Option<u16>,
+    state: State<'_, AppState>,
+) -> Result<crate::p2p::ProcessConnectionInfo, String> {
+    log::info!(
+        "Connecting to process {} in grid {} (local port: {:?})",
+        process_id,
+        grid_id,
+        local_port
+    );
+
+    let p2p_state = state.p2p_manager.lock().await;
+    if let Some(p2p_manager) = p2p_state.as_ref() {
+        p2p_manager
+            .connect_to_process(grid_id, process_id, local_port)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        Err("P2P manager not initialized".to_string())
+    }
+}
+
+/// Disconnect from a remote process
+#[tauri::command]
+pub async fn disconnect_from_process(
+    grid_id: String,
+    process_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!(
+        "Disconnecting from process {} in grid {}",
+        process_id,
+        grid_id
+    );
+
+    let p2p_state = state.p2p_manager.lock().await;
+    if let Some(p2p_manager) = p2p_state.as_ref() {
+        p2p_manager
+            .disconnect_from_process(grid_id, process_id, connection_id)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        Err("P2P manager not initialized".to_string())
+    }
 }

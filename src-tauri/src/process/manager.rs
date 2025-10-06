@@ -21,6 +21,7 @@ pub struct ProcessManager {
     active_processes: Arc<Mutex<HashMap<String, ManagedProcess>>>, // process_id -> ManagedProcess
     terminal_bridge: Arc<TerminalProcessBridge>,
     terminal_metadata: Arc<Mutex<HashMap<String, TerminalProcessMetadata>>>,
+    discovered_monitor: Arc<crate::process::discovered_monitor::DiscoveredProcessMonitor>,
 }
 
 impl Clone for ManagedProcess {
@@ -59,10 +60,11 @@ struct ManagedProcess {
 impl ProcessManager {
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
-            app_handle,
+            app_handle: app_handle.clone(),
             active_processes: Arc::new(Mutex::new(HashMap::new())),
             terminal_bridge: Arc::new(TerminalProcessBridge::new()),
             terminal_metadata: Arc::new(Mutex::new(HashMap::new())),
+            discovered_monitor: Arc::new(crate::process::discovered_monitor::DiscoveredProcessMonitor::new(app_handle)),
         }
     }
 
@@ -281,6 +283,10 @@ impl ProcessManager {
                 }
                 ProcessType::Discovered { .. } => {
                     log::info!("Stopped discovered process for grid: {}", grid_id);
+                    // Stop monitoring
+                    if let Err(e) = self.discovered_monitor.stop_monitoring(&managed_process.process_id).await {
+                        log::error!("Failed to stop monitoring for discovered process: {}", e);
+                    }
                 }
                 ProcessType::Regular => {
                     if let Some(mut child) = managed_process.child.take() {
@@ -446,6 +452,124 @@ impl ProcessManager {
     }
 
     pub async fn register_process_with_backend(&self, grid_id: String, process_id: String, config: &ProcessConfig, detected_port: Option<u16>) -> Result<()> {
+        self.register_process_with_retry(grid_id, process_id, config, detected_port, 3).await
+    }
+
+    /// Register process with backend with retry logic
+    /// Attempts up to max_attempts with exponential backoff (5s, 10s, 20s)
+    pub async fn register_process_with_retry(
+        &self,
+        grid_id: String,
+        process_id: String,
+        config: &ProcessConfig,
+        detected_port: Option<u16>,
+        max_attempts: u32,
+    ) -> Result<()> {
+        let mut attempt = 0;
+        let mut last_error = None;
+
+        while attempt < max_attempts {
+            attempt += 1;
+
+            match self.try_register_process(&grid_id, &process_id, config, detected_port).await {
+                Ok(_) => {
+                    log::info!(
+                        "Process {} registered with backend for grid {} (attempt {}/{})",
+                        process_id,
+                        grid_id,
+                        attempt,
+                        max_attempts
+                    );
+
+                    // Emit successful registration event
+                    self.app_handle
+                        .emit(
+                            "process_registration_succeeded",
+                            &serde_json::json!({
+                                "process_id": process_id,
+                                "grid_id": grid_id,
+                                "attempt": attempt,
+                            }),
+                        )
+                        .ok();
+
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to register process {} (attempt {}/{}): {}",
+                        process_id,
+                        attempt,
+                        max_attempts,
+                        e
+                    );
+                    last_error = Some(e);
+
+                    // If not the last attempt, wait with exponential backoff
+                    if attempt < max_attempts {
+                        let wait_duration = match attempt {
+                            1 => 5,  // 5 seconds
+                            2 => 10, // 10 seconds
+                            _ => 20, // 20 seconds
+                        };
+
+                        log::info!(
+                            "Retrying registration in {} seconds (attempt {}/{})",
+                            wait_duration,
+                            attempt + 1,
+                            max_attempts
+                        );
+
+                        // Emit retry event
+                        self.app_handle
+                            .emit(
+                                "process_registration_retrying",
+                                &serde_json::json!({
+                                    "process_id": process_id,
+                                    "grid_id": grid_id,
+                                    "attempt": attempt,
+                                    "next_attempt_in": wait_duration,
+                                }),
+                            )
+                            .ok();
+
+                        tokio::time::sleep(tokio::time::Duration::from_secs(wait_duration)).await;
+                    }
+                }
+            }
+        }
+
+        // All attempts failed
+        log::error!(
+            "Failed to register process {} after {} attempts",
+            process_id,
+            max_attempts
+        );
+
+        // Emit failure event
+        self.app_handle
+            .emit(
+                "process_registration_failed",
+                &serde_json::json!({
+                    "process_id": process_id,
+                    "grid_id": grid_id,
+                    "attempts": max_attempts,
+                    "error": last_error.as_ref().map(|e| e.to_string()),
+                }),
+            )
+            .ok();
+
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Registration failed after {} attempts", max_attempts)))
+    }
+
+    /// Single attempt to register process (internal helper)
+    async fn try_register_process(
+        &self,
+        grid_id: &str,
+        process_id: &str,
+        config: &ProcessConfig,
+        detected_port: Option<u16>,
+    ) -> Result<()> {
         let session = crate::auth::storage::get_user_session().await?;
         let token = session
             .ok_or_else(|| anyhow::anyhow!("No active session"))?
@@ -472,9 +596,8 @@ impl ProcessManager {
         });
 
         let client = crate::api::client::CoordinatorClient::new();
-        client.register_grid_process(&token, grid_id.clone(), registration_request).await?;
+        client.register_grid_process(&token, grid_id.to_string(), registration_request).await?;
 
-        log::info!("Process {} registered with backend for grid {}", process_id, grid_id);
         Ok(())
     }
 
@@ -539,15 +662,45 @@ impl ProcessManager {
         Ok(process_id)
     }
 
-    async fn detect_process_port(&self, _process_id: &str) -> Option<u16> {
+    async fn detect_process_port(&self, process_id: &str) -> Option<u16> {
+        use crate::process::port_detection;
+
+        // Get the PID for this process
+        let processes = self.active_processes.lock().await;
+        let pid = match processes.get(process_id) {
+            Some(managed_process) => {
+                match &managed_process.child {
+                    Some(child) => child.id().expect("Failed to get process PID"),
+                    None => {
+                        log::warn!("Process {} has no child process", process_id);
+                        return None;
+                    }
+                }
+            }
+            None => {
+                log::warn!("Process {} not found for port detection", process_id);
+                return None;
+            }
+        };
+        drop(processes);
+
+        // Wait a moment for the process to bind to ports
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
+        // Common ports to check as fallback
         let common_ports = [3000, 3001, 8000, 8080, 5000, 5173, 25565, 7777];
-        
-        for port in common_ports.iter() {
-            if self.check_port_in_use(*port).await {
-                return Some(*port);
-            }
+
+        // Try platform-specific detection first
+        let ports = port_detection::detect_process_ports(pid, &common_ports);
+
+        if let Some(port_info) = ports.first() {
+            log::info!(
+                "Detected port {} for PID {} with confidence {}",
+                port_info.port,
+                pid,
+                port_info.confidence
+            );
+            return Some(port_info.port);
         }
 
         None
@@ -713,6 +866,21 @@ impl ProcessManager {
             processes.insert(process_id.clone(), managed_process);
         }
 
+        // Start monitoring the discovered process
+        let protocol = config.env_vars.get("PROTOCOL")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "tcp".to_string());
+
+        self.discovered_monitor
+            .start_monitoring(
+                process_id.clone(),
+                grid_id.clone(),
+                original_port,
+                protocol,
+            )
+            .await
+            .context("Failed to start discovered process monitoring")?;
+
         self.app_handle.emit("process_started", &serde_json::json!({
             "grid_id": grid_id,
             "process_id": process_id,
@@ -721,7 +889,7 @@ impl ProcessManager {
             "original_port": original_port
         }))?;
 
-        log::info!("Discovered process registered: {}", process_id);
+        log::info!("Discovered process registered and monitoring started: {}", process_id);
         Ok(process_id)
     }
 

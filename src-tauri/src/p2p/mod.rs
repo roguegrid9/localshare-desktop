@@ -415,16 +415,17 @@ impl P2PManager {
     }
 
     // Start periodic heartbeat to maintain host status
+    // IMPROVED: Reduced from 30s to 10s for faster crash detection
     async fn start_host_heartbeat(&self, grid_id: String) {
         let api_client = self.api_client.clone(); // Clone the Arc, not the client
         let grid_id_clone = grid_id.clone();
-        
+
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-            
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+
             loop {
                 interval.tick().await;
-                
+
                 // Send heartbeat API call - api_client derefs automatically
                 if let Err(e) = Self::send_heartbeat(&api_client, &grid_id_clone).await {
                     log::error!("Failed to send heartbeat for grid {}: {}", grid_id_clone, e);
@@ -944,15 +945,206 @@ impl P2PManager {
 
     pub async fn handle_media_signal(&self, session_id: String, signal_type: String, signal_data: serde_json::Value, from_user_id: String) -> Result<()> {
         log::debug!("Handling media signal for session: {}", session_id);
-        
+
         let mut connections = self.connections.lock().await;
-        
+
         for (key, connection) in connections.iter_mut() {
             if key == &session_id || key.contains(&session_id) {
                 return connection.handle_media_signal(signal_type, signal_data, from_user_id).await;
             }
         }
-        
+
         Err(anyhow::anyhow!("Session not found: {}", session_id))
     }
+
+    // ============================================================================
+    // Process-Specific Guest Connection Methods
+    // ============================================================================
+
+    /// Connect to a specific process as a guest
+    /// This establishes a P2P connection and sets up local port forwarding
+    pub async fn connect_to_process(
+        &self,
+        grid_id: String,
+        process_id: String,
+        local_port: Option<u16>,
+    ) -> Result<ProcessConnectionInfo> {
+        log::info!(
+            "Connecting to process {} in grid {} (local port: {:?})",
+            process_id,
+            grid_id,
+            local_port
+        );
+
+        // First, get process availability from backend
+        let session = get_user_session().await?;
+        let token = session
+            .ok_or_else(|| anyhow::anyhow!("No active session"))?
+            .token;
+
+        // Call backend to get process availability
+        let response = self
+            .api_client
+            .get_process_availability(&token, &grid_id, &process_id)
+            .await?;
+
+        // Check if process is connectable
+        if !response.get("is_connectable").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return Err(anyhow::anyhow!("Process is not connectable"));
+        }
+
+        let host_user_id = response
+            .get("host_user_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No host user ID"))?
+            .to_string();
+
+        // Connect to the grid host if not already connected
+        let grid_connection_exists = {
+            let connections = self.connections.lock().await;
+            connections.contains_key(&grid_id)
+        };
+
+        if !grid_connection_exists {
+            log::info!("No existing grid connection, connecting to host...");
+            self.connect_to_grid_host(grid_id.clone(), host_user_id.clone()).await?;
+        }
+
+        // Register connection with backend
+        let connect_response = self
+            .api_client
+            .connect_to_process(&token, &grid_id, &process_id, local_port)
+            .await?;
+
+        let connection_id = connect_response
+            .get("connection_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No connection ID in response"))?
+            .to_string();
+
+        let actual_local_port = local_port.or_else(|| {
+            connect_response
+                .get("local_port")
+                .and_then(|v| v.as_u64())
+                .map(|p| p as u16)
+        });
+
+        // Start transport tunnel for port forwarding
+        // Get process details to determine port and type
+        let shared_processes_response = self
+            .api_client
+            .get_grid_shared_processes(&token, &grid_id)
+            .await?;
+
+        let process_data = shared_processes_response
+            .processes
+            .iter()
+            .find(|p| p.id == process_id)
+            .ok_or_else(|| anyhow::anyhow!("Process not found in grid"))?;
+
+        let target_port = process_data.config.port as u16;
+        let process_name = process_data.config.name.clone();
+
+        // Create transport config
+        let transport_config = crate::transport::TransportConfig {
+            transport_type: crate::transport::TransportType::Tcp {
+                target_port,
+                protocol: "tcp".to_string(), // Could be improved to detect actual protocol
+            },
+            local_port: actual_local_port,
+            grid_id: grid_id.clone(),
+            process_id: process_id.clone(),
+        };
+
+        // Add transport to the P2P connection
+        let transport_id = self.add_transport_to_connection(grid_id.clone(), transport_config).await?;
+        log::info!("Transport tunnel started: {}", transport_id);
+
+        // Emit connection event
+        self.app_handle
+            .emit(
+                "process_connected",
+                &serde_json::json!({
+                    "grid_id": grid_id,
+                    "process_id": process_id,
+                    "connection_id": connection_id,
+                    "local_port": actual_local_port,
+                    "host_user_id": host_user_id,
+                    "transport_id": transport_id,
+                }),
+            )
+            .ok();
+
+        Ok(ProcessConnectionInfo {
+            connection_id,
+            grid_id,
+            process_id,
+            local_port: actual_local_port,
+            host_user_id,
+        })
+    }
+
+    /// Disconnect from a process
+    pub async fn disconnect_from_process(
+        &self,
+        grid_id: String,
+        process_id: String,
+        connection_id: String,
+    ) -> Result<()> {
+        log::info!(
+            "Disconnecting from process {} in grid {}",
+            process_id,
+            grid_id
+        );
+
+        // Call backend to disconnect
+        let session = get_user_session().await?;
+        let token = session
+            .ok_or_else(|| anyhow::anyhow!("No active session"))?
+            .token;
+
+        self.api_client
+            .disconnect_from_process(&token, &grid_id, &process_id, &connection_id)
+            .await?;
+
+        // Emit disconnection event
+        self.app_handle
+            .emit(
+                "process_disconnected",
+                &serde_json::json!({
+                    "grid_id": grid_id,
+                    "process_id": process_id,
+                    "connection_id": connection_id,
+                }),
+            )
+            .ok();
+
+        log::info!("Successfully disconnected from process {}", process_id);
+        Ok(())
+    }
+
+    /// Get process availability status
+    pub async fn get_process_availability(
+        &self,
+        grid_id: String,
+        process_id: String,
+    ) -> Result<serde_json::Value> {
+        let session = get_user_session().await?;
+        let token = session
+            .ok_or_else(|| anyhow::anyhow!("No active session"))?
+            .token;
+
+        self.api_client
+            .get_process_availability(&token, &grid_id, &process_id)
+            .await
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProcessConnectionInfo {
+    pub connection_id: String,
+    pub grid_id: String,
+    pub process_id: String,
+    pub local_port: Option<u16>,
+    pub host_user_id: String,
 }

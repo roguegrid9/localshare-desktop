@@ -107,3 +107,39 @@ export interface ProcessConfigModalProps {
   onSuccess: (processId: string) => void;
   onCancel: () => void;
 }
+
+// ============================================================================
+// Host/Guest Process Availability Types
+// ============================================================================
+
+export type GridProcessStatus = 'hosted' | 'orphaned' | 'inactive';
+export type LocalProcessStatus = 'hosting' | 'connected' | 'available' | 'unavailable';
+export type RegistrationState = 'pending' | 'registered' | 'failed' | 'local_only';
+
+export interface ProcessAvailability {
+  process_id: string;
+  grid_id: string;
+
+  // Grid-level state
+  grid_status: GridProcessStatus;
+  host_user_id?: string;
+  host_display_name?: string;
+  active_connections: number;
+
+  // Local state
+  local_status: LocalProcessStatus;
+  local_port?: number;  // If connected/hosting, which local port
+
+  // Connection metadata
+  connection_id?: string;  // If connected as guest
+  is_connectable: boolean;
+  last_heartbeat_at?: number;
+}
+
+export interface ProcessConnectionInfo {
+  connection_id: string;
+  grid_id: string;
+  process_id: string;
+  local_port?: number;
+  host_user_id: string;
+}
