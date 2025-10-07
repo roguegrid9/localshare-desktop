@@ -1709,53 +1709,59 @@ impl P2PConnection {
             self.init_webrtc().await?;
         }
 
-        let pc_guard = self.peer_connection.lock().await;
-        if let Some(peer_connection) = pc_guard.as_ref() {
-            let data_channel = peer_connection.create_data_channel("data", None).await?;
-
-            log::info!(
-                "Created data channel 'data' for session {} (host side)",
-                self.session_id
-            );
-
-            // Store data channel
-            {
-                let mut dc_guard = self.data_channel.lock().await;
-                *dc_guard = Some(data_channel.clone());
+        // Get peer_connection and create data channel, then release lock
+        let (peer_connection, data_channel) = {
+            let pc_guard = self.peer_connection.lock().await;
+            if let Some(peer_connection) = pc_guard.as_ref() {
+                let data_channel = peer_connection.create_data_channel("data", None).await?;
+                (peer_connection.clone(), data_channel)
+            } else {
+                return Err(anyhow::anyhow!("Peer connection not initialized"));
             }
+        }; // Release lock here
 
-            // Setup data channel handlers (host side)
-            self.setup_data_channel_handlers(data_channel).await?;
+        log::info!(
+            "Created data channel 'data' for session {} (host side)",
+            self.session_id
+        );
 
-            // Create offer
-            let offer = peer_connection.create_offer(None).await?;
-            peer_connection.set_local_description(offer.clone()).await?;
-
-            log::info!("Created WebRTC offer for session {}", self.session_id);
-
-            let signal = serde_json::json!({
-                "type": "webrtc_signal",
-                "payload": {
-                    "to_user_id": self.peer_user_id,
-                    "grid_id": self.grid_id,
-                    "signal_data": {
-                        "type": "offer",
-                        "sdp": offer.sdp
-                    }
-                }
-            });
-
-            let guard = self.signal_sender.lock().await;
-            if let Some(sender) = guard.as_ref() {
-                sender.send(signal).context("Failed to send offer")?;
-            }
-
-            {
-                let mut state_guard = self.state.lock().await;
-                *state_guard = SessionState::Connecting;
-            }
-            self.emit_state_change(None).await?;
+        // Store data channel
+        {
+            let mut dc_guard = self.data_channel.lock().await;
+            *dc_guard = Some(data_channel.clone());
         }
+
+        // Setup data channel handlers (host side) - lock is now released
+        self.setup_data_channel_handlers(data_channel).await?;
+
+        // Create offer
+        let offer = peer_connection.create_offer(None).await?;
+        peer_connection.set_local_description(offer.clone()).await?;
+
+        log::info!("Created WebRTC offer for session {}", self.session_id);
+
+        let signal = serde_json::json!({
+            "type": "webrtc_signal",
+            "payload": {
+                "to_user_id": self.peer_user_id,
+                "grid_id": self.grid_id,
+                "signal_data": {
+                    "type": "offer",
+                    "sdp": offer.sdp
+                }
+            }
+        });
+
+        let guard = self.signal_sender.lock().await;
+        if let Some(sender) = guard.as_ref() {
+            sender.send(signal).context("Failed to send offer")?;
+        }
+
+        {
+            let mut state_guard = self.state.lock().await;
+            *state_guard = SessionState::Connecting;
+        }
+        self.emit_state_change(None).await?;
 
         Ok(())
     }
