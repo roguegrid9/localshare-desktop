@@ -2,12 +2,15 @@
 use super::TransportInfo;
 use anyhow::{Result, Context};
 use std::sync::Arc;
+use std::collections::HashMap;
 use tokio::sync::Mutex;
 use webrtc::data_channel::RTCDataChannel;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bytes::Bytes;
 use base64::{Engine as _, engine::general_purpose};
+
 pub struct TcpTunnel {
     target_port: u16,
     protocol: String, // "minecraft", "terraria", "tcp", etc.
@@ -17,6 +20,7 @@ pub struct TcpTunnel {
     listener: Arc<Mutex<Option<TcpListener>>>,
     data_channel: Arc<Mutex<Option<Arc<RTCDataChannel>>>>,
     is_running: Arc<Mutex<bool>>,
+    active_connections: Arc<Mutex<HashMap<String, Arc<Mutex<OwnedWriteHalf>>>>>,
 }
 
 impl TcpTunnel {
@@ -30,6 +34,7 @@ impl TcpTunnel {
             listener: Arc::new(Mutex::new(None)),
             data_channel: Arc::new(Mutex::new(None)),
             is_running: Arc::new(Mutex::new(false)),
+            active_connections: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -70,6 +75,7 @@ impl TcpTunnel {
         let is_running = self.is_running.clone();
         let target_port = self.target_port;
         let protocol = self.protocol.clone();
+        let active_connections = self.active_connections.clone();
 
         tokio::spawn(async move {
             loop {
@@ -102,8 +108,9 @@ impl TcpTunnel {
                 // Handle the connection
                 let dc_clone = data_channel_ref.clone();
                 let protocol_clone = protocol.clone();
+                let connections_clone = active_connections.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_tcp_connection(stream, dc_clone, target_port, protocol_clone).await {
+                    if let Err(e) = Self::handle_tcp_connection(stream, dc_clone, target_port, protocol_clone, connections_clone).await {
                         log::error!("TCP connection error: {}", e);
                     }
                 });
@@ -116,26 +123,38 @@ impl TcpTunnel {
     }
 
     async fn handle_tcp_connection(
-        mut local_stream: TcpStream, 
+        local_stream: TcpStream,
         data_channel: Arc<RTCDataChannel>,
         target_port: u16,
-        protocol: String
+        protocol: String,
+        active_connections: Arc<Mutex<HashMap<String, Arc<Mutex<OwnedWriteHalf>>>>>
     ) -> Result<()> {
-        let mut buffer = vec![0u8; 4096];
-        let mut connection_id = uuid::Uuid::new_v4().to_string();
-        
+        let connection_id = uuid::Uuid::new_v4().to_string();
+
         log::info!("Handling {} TCP connection {}", protocol, connection_id);
+
+        // Split the stream into read and write halves
+        let (mut read_half, write_half) = local_stream.into_split();
+
+        // Store the write half for incoming data from P2P
+        {
+            let mut connections = active_connections.lock().await;
+            connections.insert(connection_id.clone(), Arc::new(Mutex::new(write_half)));
+        }
+
+        let mut buffer = vec![0u8; 4096];
+        let connection_id_clone = connection_id.clone();
 
         loop {
             // Read from local client (game client, etc.)
-            match local_stream.read(&mut buffer).await {
+            match read_half.read(&mut buffer).await {
                 Ok(0) => {
                     log::info!("TCP connection {} closed by client", connection_id);
                     break;
                 }
                 Ok(n) => {
                     let data = &buffer[..n];
-                    
+
                     // Create TCP-over-P2P message
                     let p2p_message = serde_json::json!({
                         "type": "tcp_data",
@@ -162,10 +181,16 @@ impl TcpTunnel {
             }
         }
 
+        // Remove connection from active connections
+        {
+            let mut connections = active_connections.lock().await;
+            connections.remove(&connection_id_clone);
+        }
+
         // Send connection close message
         let close_message = serde_json::json!({
             "type": "tcp_close",
-            "connection_id": connection_id,
+            "connection_id": connection_id_clone,
             "target_port": target_port,
             "protocol": protocol
         });
@@ -176,6 +201,20 @@ impl TcpTunnel {
         }
 
         Ok(())
+    }
+
+    /// Write data to a specific TCP connection (for incoming P2P data)
+    pub async fn write_to_connection(&self, connection_id: &str, data: &[u8]) -> Result<()> {
+        let connections = self.active_connections.lock().await;
+
+        if let Some(writer) = connections.get(connection_id) {
+            let mut writer_guard = writer.lock().await;
+            writer_guard.write_all(data).await?;
+            log::debug!("Wrote {} bytes to TCP connection {}", data.len(), connection_id);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("TCP connection {} not found", connection_id))
+        }
     }
 
     fn get_connection_instructions(&self) -> String {

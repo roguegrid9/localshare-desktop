@@ -1622,6 +1622,7 @@ impl P2PConnection {
                     let process_manager = process_manager.clone();
                     let app_handle = app_handle.clone();
                     let bytes_received = bytes_received.clone(); // Fixed: use the cloned Arc
+                    let active_transports = active_transports.clone(); // Clone for the async closure
 
                     Box::pin(async move {
                         // Track received bytes
@@ -1648,8 +1649,23 @@ impl P2PConnection {
                                                     use base64::{Engine as _, engine::general_purpose};
                                                     if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
                                                         log::info!("Received TCP data response ({} bytes) for connection {} over P2P", tcp_data.len(), connection_id);
-                                                        // TODO: Forward to local TCP socket
-                                                        // This requires architectural changes to TcpTunnel to support bidirectional forwarding
+
+                                                        // Forward to local TCP socket
+                                                        let transports = active_transports.lock().await;
+                                                        let mut wrote_data = false;
+
+                                                        for (_transport_id, transport) in transports.iter() {
+                                                            if let crate::transport::TransportInstance::Tcp(tcp_tunnel) = transport {
+                                                                if let Ok(_) = tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
+                                                                    wrote_data = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        if !wrote_data {
+                                                            log::warn!("Could not find TCP connection {} to write {} bytes", connection_id, tcp_data.len());
+                                                        }
                                                     }
                                                 }
                                             }
