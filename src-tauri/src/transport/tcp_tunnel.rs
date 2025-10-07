@@ -172,7 +172,7 @@ impl TcpTunnel {
                         break;
                     }
 
-                    log::debug!("Sent {} bytes over {} tunnel", n, protocol);
+                    log::info!("📤 Sent {} bytes from local client to remote server over {} tunnel (connection {})", n, protocol, connection_id);
                 }
                 Err(e) => {
                     log::error!("Failed to read from TCP connection: {}", e);

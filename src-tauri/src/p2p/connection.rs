@@ -1232,6 +1232,7 @@ impl P2PConnection {
                                         ) {
                                             use base64::{Engine as _, engine::general_purpose};
                                             if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
+                                                log::info!("📥 Host received {} bytes from client (connection {}) to forward to localhost:{}", tcp_data.len(), connection_id, target_port);
                                                 // Get or create TCP connection to target port
                                                 let connection_key = format!("{}_{}", connection_id, target_port);
 
@@ -1264,6 +1265,7 @@ impl P2PConnection {
                                                                         Ok(n) => {
                                                                             // Send response back over WebRTC
                                                                             let response = &buffer[..n];
+                                                                            log::info!("📤 Host read {} bytes from real server (localhost:{}), sending back to client", n, target_port);
                                                                             let response_msg = serde_json::json!({
                                                                                 "type": "tcp_data",
                                                                                 "connection_id": conn_id_for_reading,
@@ -1278,7 +1280,7 @@ impl P2PConnection {
                                                                                 log::error!("Failed to send TCP response over WebRTC: {}", e);
                                                                                 break;
                                                                             }
-                                                                            log::debug!("Sent {} bytes back over WebRTC for {}", n, conn_id_for_reading);
+                                                                            log::info!("✅ Host sent {} bytes back over WebRTC to client (connection {})", n, conn_id_for_reading);
                                                                         }
                                                                         Err(e) => {
                                                                             log::error!("Failed to read from TCP connection: {}", e);
@@ -1305,7 +1307,7 @@ impl P2PConnection {
                                                         drop(stream_guard);
                                                         connections.remove(&connection_key);
                                                     } else {
-                                                        log::debug!("Forwarded {} bytes to localhost:{}", tcp_data.len(), target_port);
+                                                        log::info!("✅ Host forwarded {} bytes to real server at localhost:{}", tcp_data.len(), target_port);
                                                     }
                                                 }
                                             }
@@ -1648,20 +1650,17 @@ impl P2PConnection {
                                                 if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
                                                     use base64::{Engine as _, engine::general_purpose};
                                                     if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
-                                                        log::info!("Received TCP data response ({} bytes) for connection {} over P2P", tcp_data.len(), connection_id);
+                                                        log::info!("📥 Client received {} bytes from server for connection {} over P2P", tcp_data.len(), connection_id);
 
                                                         // Forward to local TCP socket
                                                         let transports = active_transports.lock().await;
-                                                        log::info!("🔍 Searching through {} active transports for TCP tunnel", transports.len());
                                                         let mut wrote_data = false;
 
                                                         for (transport_id, transport) in transports.iter() {
-                                                            log::info!("🔍 Checking transport: {}", transport_id);
                                                             if let crate::transport::TransportInstance::Tcp(tcp_tunnel) = transport {
-                                                                log::info!("✅ Found TCP tunnel, attempting to write {} bytes to connection {}", tcp_data.len(), connection_id);
                                                                 match tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
                                                                     Ok(_) => {
-                                                                        log::info!("✅ Successfully wrote data to TCP connection");
+                                                                        log::info!("✅ Client wrote {} bytes to local Minecraft client", tcp_data.len());
                                                                         wrote_data = true;
                                                                         break;
                                                                     }
@@ -1669,8 +1668,6 @@ impl P2PConnection {
                                                                         log::error!("❌ Failed to write to TCP connection: {}", e);
                                                                     }
                                                                 }
-                                                            } else {
-                                                                log::info!("⏭️ Transport {} is not a TCP tunnel, skipping", transport_id);
                                                             }
                                                         }
 
