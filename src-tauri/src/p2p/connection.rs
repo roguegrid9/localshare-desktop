@@ -1118,7 +1118,8 @@ impl P2PConnection {
         let active_transports = self.active_transports.clone();
 
         // TCP connection pool for forwarding data to actual process ports
-        let tcp_connections: Arc<Mutex<HashMap<String, Arc<Mutex<tokio::net::TcpStream>>>>> = Arc::new(Mutex::new(HashMap::new()));
+        // Using OwnedWriteHalf to avoid mutex contention between read and write operations
+        let tcp_connections: Arc<Mutex<HashMap<String, Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>>>>> = Arc::new(Mutex::new(HashMap::new()));
 
         // on_open handler
         let session_id_open = session_id.clone();
@@ -1242,11 +1243,13 @@ impl P2PConnection {
                                                     match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", target_port)).await {
                                                         Ok(stream) => {
                                                             log::info!("Opened TCP connection to localhost:{} for {}", target_port, connection_id);
-                                                            let stream_arc = Arc::new(Mutex::new(stream));
-                                                            connections.insert(connection_key.clone(), stream_arc.clone());
+
+                                                            // Split stream into read and write halves to avoid mutex contention
+                                                            let (read_half, write_half) = stream.into_split();
+                                                            let write_arc = Arc::new(Mutex::new(write_half));
+                                                            connections.insert(connection_key.clone(), write_arc.clone());
 
                                                             // Spawn task to read responses from TCP and forward back over WebRTC
-                                                            let stream_for_reading = stream_arc.clone();
                                                             let dc_for_reading = dc.clone();
                                                             let conn_id_for_reading = connection_id.to_string();
                                                             let protocol = json_msg.get("protocol").and_then(|p| p.as_str()).unwrap_or("tcp").to_string();
@@ -1254,10 +1257,10 @@ impl P2PConnection {
                                                             tokio::spawn(async move {
                                                                 use tokio::io::AsyncReadExt;
                                                                 let mut buffer = vec![0u8; 4096];
+                                                                let mut read_half = read_half;
 
                                                                 loop {
-                                                                    let mut stream_guard = stream_for_reading.lock().await;
-                                                                    match stream_guard.read(&mut buffer).await {
+                                                                    match read_half.read(&mut buffer).await {
                                                                         Ok(0) => {
                                                                             log::info!("TCP connection closed by server for {}", conn_id_for_reading);
                                                                             break;
@@ -1298,13 +1301,13 @@ impl P2PConnection {
                                                 }
 
                                                 // Forward data to TCP connection
-                                                if let Some(stream) = connections.get(&connection_key) {
+                                                if let Some(write_half) = connections.get(&connection_key) {
                                                     use tokio::io::AsyncWriteExt;
-                                                    let mut stream_guard = stream.lock().await;
-                                                    if let Err(e) = stream_guard.write_all(&tcp_data).await {
+                                                    let mut writer = write_half.lock().await;
+                                                    if let Err(e) = writer.write_all(&tcp_data).await {
                                                         log::error!("Failed to write to TCP connection: {}", e);
                                                         // Remove failed connection
-                                                        drop(stream_guard);
+                                                        drop(writer);
                                                         connections.remove(&connection_key);
                                                     } else {
                                                         log::info!("✅ Host forwarded {} bytes to real server at localhost:{}", tcp_data.len(), target_port);
