@@ -476,8 +476,118 @@ impl P2PConnection {
     }
 
     pub async fn handle_signal(&mut self, signal_data: serde_json::Value) -> Result<()> {
-        // Implementation from your original updated connection.rs
-        // (The full implementation you had before)
+        log::info!("Handling WebRTC signal: {:?}", signal_data);
+
+        // Check if this is an ICE candidate (has "candidate" key but no "type" key)
+        if signal_data.get("candidate").is_some() && signal_data.get("type").is_none() {
+            log::info!("Received ICE candidate");
+
+            let candidate_data = signal_data.get("candidate").unwrap();
+
+            let candidate = candidate_data
+                .get("candidate")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing candidate in ICE"))?;
+
+            let sdp_mid = candidate_data
+                .get("sdpMid")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            let sdp_mline_index = candidate_data
+                .get("sdpMLineIndex")
+                .and_then(|v| v.as_u64())
+                .map(|i| i as u16);
+
+            let pc_guard = self.peer_connection.lock().await;
+            if let Some(peer_connection) = pc_guard.as_ref() {
+                let ice_candidate = webrtc::ice_transport::ice_candidate::RTCIceCandidateInit {
+                    candidate: candidate.to_string(),
+                    sdp_mid,
+                    sdp_mline_index,
+                    username_fragment: None,
+                };
+                peer_connection.add_ice_candidate(ice_candidate).await?;
+                log::info!("Added ICE candidate");
+            }
+            return Ok(());
+        }
+
+        // Get the signal type for offer/answer
+        let signal_type = signal_data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing signal type"))?;
+
+        match signal_type {
+            "offer" => {
+                log::info!("Received WebRTC offer");
+
+                // Initialize WebRTC if not already done
+                if self.peer_connection.lock().await.is_none() {
+                    self.init_webrtc().await?;
+                }
+
+                let sdp = signal_data
+                    .get("sdp")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing SDP in offer"))?;
+
+                let pc_guard = self.peer_connection.lock().await;
+                if let Some(peer_connection) = pc_guard.as_ref() {
+                    // Set remote description (the offer)
+                    let offer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(
+                        sdp.to_string()
+                    )?;
+                    peer_connection.set_remote_description(offer).await?;
+
+                    // Create answer
+                    let answer = peer_connection.create_answer(None).await?;
+                    peer_connection.set_local_description(answer.clone()).await?;
+
+                    log::info!("Created WebRTC answer");
+
+                    // Send answer back via signal sender
+                    let answer_signal = serde_json::json!({
+                        "type": "webrtc_signal",
+                        "payload": {
+                            "to_user_id": self.peer_user_id,
+                            "grid_id": self.grid_id,
+                            "signal_data": {
+                                "type": "answer",
+                                "sdp": answer.sdp
+                            }
+                        }
+                    });
+
+                    let sender_guard = self.signal_sender.lock().await;
+                    if let Some(sender) = sender_guard.as_ref() {
+                        sender.send(answer_signal).context("Failed to send answer")?;
+                    }
+                }
+            }
+            "answer" => {
+                log::info!("Received WebRTC answer");
+
+                let sdp = signal_data
+                    .get("sdp")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing SDP in answer"))?;
+
+                let pc_guard = self.peer_connection.lock().await;
+                if let Some(peer_connection) = pc_guard.as_ref() {
+                    let answer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::answer(
+                        sdp.to_string()
+                    )?;
+                    peer_connection.set_remote_description(answer).await?;
+                    log::info!("Set remote description (answer)");
+                }
+            }
+            _ => {
+                log::warn!("Unknown signal type: {}", signal_type);
+            }
+        }
+
         Ok(())
     }
 

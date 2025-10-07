@@ -379,8 +379,10 @@ impl P2PManager {
             connection.set_signal_sender(sender.clone()).await;
         }
 
-        // Don't call start_connection() - host waits for guest's offer
-        // The guest will send an offer, and we'll respond via handle_webrtc_signal
+        // Now start the WebRTC handshake before storing
+        // Host creates the offer and sends it to the guest
+        log::info!("Starting WebRTC connection as host for session {}", session_id);
+        connection.start_connection().await?;
 
         // Store connection using grid:user key for host connections
         let connection_key = format!("{}:{}", grid_id, from_user_id);
