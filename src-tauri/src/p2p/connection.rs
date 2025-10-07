@@ -1106,6 +1106,157 @@ impl P2PConnection {
         Ok(token)
     }
 
+    // Setup data channel event handlers (for host-created data channels)
+    async fn setup_data_channel_handlers(&self, data_channel: Arc<RTCDataChannel>) -> Result<()> {
+        let session_id = self.session_id.clone();
+        let grid_id = self.grid_id.clone();
+        let process_manager = self.process_manager.clone();
+        let is_host = self.is_host;
+        let app_handle = self.app_handle.clone();
+        let bytes_received = self.bytes_received.clone();
+        let transport_configs = self.transport_configs.clone();
+        let active_transports = self.active_transports.clone();
+
+        // on_open handler
+        let session_id_open = session_id.clone();
+        let transport_configs_open = transport_configs.clone();
+        let active_transports_open = active_transports.clone();
+        let app_handle_open = app_handle.clone();
+        let grid_id_open = grid_id.clone();
+        let data_channel_open = data_channel.clone();
+
+        data_channel.on_open(Box::new(move || {
+            let session_id = session_id_open.clone();
+            let transport_configs = transport_configs_open.clone();
+            let active_transports = active_transports_open.clone();
+            let app_handle = app_handle_open.clone();
+            let grid_id = grid_id_open.clone();
+            let d = data_channel_open.clone();
+
+            Box::pin(async move {
+                log::info!("Data channel opened for session {}", session_id);
+
+                // Start any pending transports now that the data channel is open
+                let pending_configs = {
+                    let mut configs = transport_configs.lock().await;
+                    configs.drain(..).collect::<Vec<_>>()
+                };
+
+                for config in pending_configs {
+                    log::info!("Starting pending transport: {:?}", config);
+
+                    // Create transport instance
+                    match create_transport(config.clone()) {
+                        Ok(mut transport) => {
+                            // Start the transport
+                            match transport.start(d.clone()).await {
+                                Ok(local_port) => {
+                                    // Get connection info
+                                    let connection_info = transport.get_connection_info();
+
+                                    // Store the transport
+                                    let transport_id = format!("{}_{}", config.grid_id, config.process_id);
+                                    {
+                                        let mut transports = active_transports.lock().await;
+                                        transports.insert(transport_id.clone(), transport);
+                                    }
+
+                                    // Emit transport started event to frontend
+                                    if let Err(e) = app_handle.emit(
+                                        "transport_started",
+                                        &serde_json::json!({
+                                            "transport_id": transport_id,
+                                            "grid_id": config.grid_id,
+                                            "process_id": config.process_id,
+                                            "connection_info": connection_info,
+                                            "local_port": local_port
+                                        }),
+                                    ) {
+                                        log::error!("Failed to emit transport_started event: {}", e);
+                                    }
+
+                                    log::info!(
+                                        "Transport {} started successfully on port {}",
+                                        transport_id,
+                                        local_port
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to start transport: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create transport: {}", e);
+                        }
+                    }
+                }
+            })
+        }));
+
+        // on_message handler
+        data_channel.on_message(Box::new(move |msg: DataChannelMessage| {
+            let grid_id = grid_id.clone();
+            let process_manager = process_manager.clone();
+            let app_handle = app_handle.clone();
+            let bytes_received = bytes_received.clone();
+
+            Box::pin(async move {
+                // Track received bytes
+                {
+                    let mut received = bytes_received.lock().await;
+                    *received += msg.data.len() as u64;
+                }
+
+                // Try to parse as JSON message
+                if let Ok(message_str) = String::from_utf8(msg.data.to_vec()) {
+                    if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(&message_str) {
+                        // Handle different message types
+                        if let Some(msg_type) = json_msg.get("type").and_then(|t| t.as_str()) {
+                            match msg_type {
+                                "terminal_input" => {
+                                    log::info!("Received terminal input over P2P");
+                                    // Forward to process stdin if we're the host
+                                    if is_host {
+                                        if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
+                                            if let Ok(input_data) = base64::decode(data_b64) {
+                                                let pm_guard = process_manager.lock().await;
+                                                if let Some(pm) = pm_guard.as_ref() {
+                                                    if let Err(e) = pm.handle_p2p_data(grid_id.clone(), input_data).await {
+                                                        log::error!("Failed to route terminal input to process: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "terminal_output" => {
+                                    log::info!("Received terminal output over P2P");
+                                    // Emit to frontend for terminal UI
+                                    if let Err(e) = app_handle.emit(
+                                        "p2p_terminal_output",
+                                        &serde_json::json!({
+                                            "grid_id": grid_id,
+                                            "data": json_msg.get("data")
+                                        }),
+                                    ) {
+                                        log::error!("Failed to emit terminal output: {}", e);
+                                    }
+                                }
+                                _ => {
+                                    log::debug!("Received message type: {}", msg_type);
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        }));
+
+        log::info!("Data channel handlers setup complete for session {}", session_id);
+        Ok(())
+    }
+
     // UPDATED handlers that detect connection type and preserve original functionality
     async fn setup_enhanced_peer_connection_handlers(
         &self,
@@ -1572,6 +1723,9 @@ impl P2PConnection {
                 let mut dc_guard = self.data_channel.lock().await;
                 *dc_guard = Some(data_channel.clone());
             }
+
+            // Setup data channel handlers (host side)
+            self.setup_data_channel_handlers(data_channel).await?;
 
             // Create offer
             let offer = peer_connection.create_offer(None).await?;
