@@ -173,7 +173,7 @@ impl RelayConfig {
             .build()?;
 
         let response = client
-            .get("https://roguegrid9-coordinator.fly.dev/api/v1/grids/turn-config")
+            .get("https://roguegrid9-coordinator.fly.dev/api/v1/turn-config")
             .query(&[("grid_id", grid_id)])
             .header("Authorization", format!("Bearer {}", auth_token))
             .header("User-Agent", "RogueGrid9-Client/1.0")
@@ -507,8 +507,17 @@ impl P2PConnection {
                     sdp_mline_index,
                     username_fragment: None,
                 };
-                peer_connection.add_ice_candidate(ice_candidate).await?;
-                log::info!("Added ICE candidate");
+                match peer_connection.add_ice_candidate(ice_candidate).await {
+                    Ok(_) => {
+                        log::info!("Added ICE candidate");
+                    }
+                    Err(e) => {
+                        log::error!("❌ Failed to add ICE candidate: {}", e);
+                        return Err(anyhow::anyhow!("Failed to add ICE candidate: {}", e));
+                    }
+                }
+            } else {
+                log::error!("❌ Peer connection is None when trying to add ICE candidate");
             }
             return Ok(());
         }
@@ -574,13 +583,29 @@ impl P2PConnection {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing SDP in answer"))?;
 
+                log::info!("Extracted SDP from answer, attempting to lock peer connection");
+
                 let pc_guard = self.peer_connection.lock().await;
+                log::info!("Peer connection lock acquired");
+
                 if let Some(peer_connection) = pc_guard.as_ref() {
+                    log::info!("Peer connection exists, creating answer description");
                     let answer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::answer(
                         sdp.to_string()
                     )?;
-                    peer_connection.set_remote_description(answer).await?;
-                    log::info!("Set remote description (answer)");
+                    log::info!("Answer description created, setting remote description");
+
+                    match peer_connection.set_remote_description(answer).await {
+                        Ok(_) => {
+                            log::info!("✅ Set remote description (answer) successfully");
+                        }
+                        Err(e) => {
+                            log::error!("❌ Failed to set remote description: {}", e);
+                            return Err(anyhow::anyhow!("Failed to set remote description: {}", e));
+                        }
+                    }
+                } else {
+                    log::error!("❌ Peer connection is None when trying to set answer");
                 }
             }
             _ => {
