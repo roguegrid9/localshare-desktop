@@ -1073,13 +1073,16 @@ impl P2PConnection {
         // Create peer connection
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
 
-        // Setup handlers
+        // Store peer connection BEFORE setting up handlers
+        // This prevents race condition where answer arrives before peer_connection is stored
+        {
+            let mut pc_guard = self.peer_connection.lock().await;
+            *pc_guard = Some(peer_connection.clone());
+        } // Release lock before async operations
+
+        // Setup handlers (must be after storing peer_connection)
         self.setup_enhanced_peer_connection_handlers(&peer_connection)
             .await?;
-
-        // Store peer connection
-        let mut pc_guard = self.peer_connection.lock().await;
-        *pc_guard = Some(peer_connection);
 
         log::info!(
             "WebRTC initialized with API-provided TURN config for session {}",
