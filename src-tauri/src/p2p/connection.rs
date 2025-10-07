@@ -1652,19 +1652,30 @@ impl P2PConnection {
 
                                                         // Forward to local TCP socket
                                                         let transports = active_transports.lock().await;
+                                                        log::info!("🔍 Searching through {} active transports for TCP tunnel", transports.len());
                                                         let mut wrote_data = false;
 
-                                                        for (_transport_id, transport) in transports.iter() {
+                                                        for (transport_id, transport) in transports.iter() {
+                                                            log::info!("🔍 Checking transport: {}", transport_id);
                                                             if let crate::transport::TransportInstance::Tcp(tcp_tunnel) = transport {
-                                                                if let Ok(_) = tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
-                                                                    wrote_data = true;
-                                                                    break;
+                                                                log::info!("✅ Found TCP tunnel, attempting to write {} bytes to connection {}", tcp_data.len(), connection_id);
+                                                                match tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
+                                                                    Ok(_) => {
+                                                                        log::info!("✅ Successfully wrote data to TCP connection");
+                                                                        wrote_data = true;
+                                                                        break;
+                                                                    }
+                                                                    Err(e) => {
+                                                                        log::error!("❌ Failed to write to TCP connection: {}", e);
+                                                                    }
                                                                 }
+                                                            } else {
+                                                                log::info!("⏭️ Transport {} is not a TCP tunnel, skipping", transport_id);
                                                             }
                                                         }
 
                                                         if !wrote_data {
-                                                            log::warn!("Could not find TCP connection {} to write {} bytes", connection_id, tcp_data.len());
+                                                            log::warn!("❌ Could not find TCP connection {} to write {} bytes (checked {} transports)", connection_id, tcp_data.len(), transports.len());
                                                         }
                                                     }
                                                 }
