@@ -379,15 +379,24 @@ impl P2PManager {
             connection.set_signal_sender(sender.clone()).await;
         }
 
-        // Now start the WebRTC handshake before storing
+        // Store connection BEFORE starting WebRTC to prevent race condition
+        // where answer arrives before connection is stored
+        let connection_key = format!("{}:{}", grid_id, from_user_id);
+        {
+            let mut connections = self.connections.lock().await;
+            connections.insert(connection_key, connection);
+        } // Release lock before async operations
+
+        // Now start the WebRTC handshake
         // Host creates the offer and sends it to the guest
         log::info!("Starting WebRTC connection as host for session {}", session_id);
-        connection.start_connection().await?;
 
-        // Store connection using grid:user key for host connections
-        let connection_key = format!("{}:{}", grid_id, from_user_id);
+        // Get connection from HashMap to call start_connection
         let mut connections = self.connections.lock().await;
-        connections.insert(connection_key, connection);
+        let connection_key = format!("{}:{}", grid_id, from_user_id);
+        if let Some(connection) = connections.get_mut(&connection_key) {
+            connection.start_connection().await?;
+        }
 
         Ok(())
     }
