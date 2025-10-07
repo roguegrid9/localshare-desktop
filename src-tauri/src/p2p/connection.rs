@@ -1117,6 +1117,9 @@ impl P2PConnection {
         let transport_configs = self.transport_configs.clone();
         let active_transports = self.active_transports.clone();
 
+        // TCP connection pool for forwarding data to actual process ports
+        let tcp_connections: Arc<Mutex<HashMap<String, Arc<Mutex<tokio::net::TcpStream>>>>> = Arc::new(Mutex::new(HashMap::new()));
+
         // on_open handler
         let session_id_open = session_id.clone();
         let transport_configs_open = transport_configs.clone();
@@ -1195,11 +1198,15 @@ impl P2PConnection {
         }));
 
         // on_message handler
+        let tcp_connections_msg = tcp_connections.clone();
+        let data_channel_for_msg = data_channel.clone();
         data_channel.on_message(Box::new(move |msg: DataChannelMessage| {
             let grid_id = grid_id.clone();
             let process_manager = process_manager.clone();
             let app_handle = app_handle.clone();
             let bytes_received = bytes_received.clone();
+            let tcp_connections = tcp_connections_msg.clone();
+            let dc = data_channel_for_msg.clone();
 
             Box::pin(async move {
                 // Track received bytes
@@ -1214,6 +1221,111 @@ impl P2PConnection {
                         // Handle different message types
                         if let Some(msg_type) = json_msg.get("type").and_then(|t| t.as_str()) {
                             match msg_type {
+                                "tcp_data" => {
+                                    log::info!("Received TCP data over P2P");
+                                    // Forward to actual process port if we're the host
+                                    if is_host {
+                                        if let (Some(connection_id), Some(target_port), Some(data_b64)) = (
+                                            json_msg.get("connection_id").and_then(|c| c.as_str()),
+                                            json_msg.get("target_port").and_then(|p| p.as_u64()),
+                                            json_msg.get("data").and_then(|d| d.as_str())
+                                        ) {
+                                            use base64::{Engine as _, engine::general_purpose};
+                                            if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
+                                                // Get or create TCP connection to target port
+                                                let connection_key = format!("{}_{}", connection_id, target_port);
+
+                                                let mut connections = tcp_connections.lock().await;
+                                                if !connections.contains_key(&connection_key) {
+                                                    // Create new TCP connection to target process
+                                                    match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", target_port)).await {
+                                                        Ok(stream) => {
+                                                            log::info!("Opened TCP connection to localhost:{} for {}", target_port, connection_id);
+                                                            let stream_arc = Arc::new(Mutex::new(stream));
+                                                            connections.insert(connection_key.clone(), stream_arc.clone());
+
+                                                            // Spawn task to read responses from TCP and forward back over WebRTC
+                                                            let stream_for_reading = stream_arc.clone();
+                                                            let dc_for_reading = dc.clone();
+                                                            let conn_id_for_reading = connection_id.to_string();
+                                                            let protocol = json_msg.get("protocol").and_then(|p| p.as_str()).unwrap_or("tcp").to_string();
+
+                                                            tokio::spawn(async move {
+                                                                use tokio::io::AsyncReadExt;
+                                                                let mut buffer = vec![0u8; 4096];
+
+                                                                loop {
+                                                                    let mut stream_guard = stream_for_reading.lock().await;
+                                                                    match stream_guard.read(&mut buffer).await {
+                                                                        Ok(0) => {
+                                                                            log::info!("TCP connection closed by server for {}", conn_id_for_reading);
+                                                                            break;
+                                                                        }
+                                                                        Ok(n) => {
+                                                                            // Send response back over WebRTC
+                                                                            let response = &buffer[..n];
+                                                                            let response_msg = serde_json::json!({
+                                                                                "type": "tcp_data",
+                                                                                "connection_id": conn_id_for_reading,
+                                                                                "target_port": target_port,
+                                                                                "protocol": protocol,
+                                                                                "data": general_purpose::STANDARD.encode(response)
+                                                                            });
+
+                                                                            let msg_bytes = response_msg.to_string().into_bytes();
+                                                                            use bytes::Bytes;
+                                                                            if let Err(e) = dc_for_reading.send(&Bytes::from(msg_bytes)).await {
+                                                                                log::error!("Failed to send TCP response over WebRTC: {}", e);
+                                                                                break;
+                                                                            }
+                                                                            log::debug!("Sent {} bytes back over WebRTC for {}", n, conn_id_for_reading);
+                                                                        }
+                                                                        Err(e) => {
+                                                                            log::error!("Failed to read from TCP connection: {}", e);
+                                                                            break;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            });
+                                                        }
+                                                        Err(e) => {
+                                                            log::error!("Failed to connect to localhost:{}: {}", target_port, e);
+                                                            return;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Forward data to TCP connection
+                                                if let Some(stream) = connections.get(&connection_key) {
+                                                    use tokio::io::AsyncWriteExt;
+                                                    let mut stream_guard = stream.lock().await;
+                                                    if let Err(e) = stream_guard.write_all(&tcp_data).await {
+                                                        log::error!("Failed to write to TCP connection: {}", e);
+                                                        // Remove failed connection
+                                                        drop(stream_guard);
+                                                        connections.remove(&connection_key);
+                                                    } else {
+                                                        log::debug!("Forwarded {} bytes to localhost:{}", tcp_data.len(), target_port);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "tcp_close" => {
+                                    log::info!("Received TCP close over P2P");
+                                    if is_host {
+                                        if let (Some(connection_id), Some(target_port)) = (
+                                            json_msg.get("connection_id").and_then(|c| c.as_str()),
+                                            json_msg.get("target_port").and_then(|p| p.as_u64())
+                                        ) {
+                                            let connection_key = format!("{}_{}", connection_id, target_port);
+                                            let mut connections = tcp_connections.lock().await;
+                                            connections.remove(&connection_key);
+                                            log::info!("Closed TCP connection for {}", connection_id);
+                                        }
+                                    }
+                                }
                                 "terminal_input" => {
                                     log::info!("Received terminal input over P2P");
                                     // Forward to process stdin if we're the host
@@ -1531,8 +1643,16 @@ impl P2PConnection {
                                             // TODO: Forward to local HTTP server
                                         }
                                         "tcp_data" => {
-                                            log::info!("Received TCP data over P2P");
-                                            // TODO: Forward to local TCP socket
+                                            if let Some(connection_id) = json_msg.get("connection_id").and_then(|c| c.as_str()) {
+                                                if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
+                                                    use base64::{Engine as _, engine::general_purpose};
+                                                    if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
+                                                        log::info!("Received TCP data response ({} bytes) for connection {} over P2P", tcp_data.len(), connection_id);
+                                                        // TODO: Forward to local TCP socket
+                                                        // This requires architectural changes to TcpTunnel to support bidirectional forwarding
+                                                    }
+                                                }
+                                            }
                                         }
                                         "terminal_input" => {
                                             log::info!("Received terminal input over P2P");

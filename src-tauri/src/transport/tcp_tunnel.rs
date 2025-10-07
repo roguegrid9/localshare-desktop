@@ -197,23 +197,60 @@ impl TcpTunnel {
     }
 
     pub async fn start(&mut self, data_channel: Arc<RTCDataChannel>) -> Result<u16> {
-        // Implementation from your Transport trait impl
-        Ok(3001) // placeholder
+        // Find available port
+        let local_port = self.find_available_port().await?;
+        self.local_port = Some(local_port);
+
+        // Store data channel
+        {
+            let mut dc_guard = self.data_channel.lock().await;
+            *dc_guard = Some(data_channel.clone());
+        }
+
+        // Mark as running
+        {
+            let mut running = self.is_running.lock().await;
+            *running = true;
+        }
+
+        // Start TCP proxy
+        self.start_tcp_proxy(local_port, data_channel).await?;
+
+        Ok(local_port)
     }
 
     pub async fn stop(&mut self) -> Result<()> {
-        // Implementation from your Transport trait impl
+        log::info!("Stopping {} TCP tunnel on port {:?}", self.protocol, self.local_port);
+
+        // Mark as not running
+        {
+            let mut running = self.is_running.lock().await;
+            *running = false;
+        }
+
+        // Clear listener
+        {
+            let mut listener_guard = self.listener.lock().await;
+            *listener_guard = None;
+        }
+
+        // Clear data channel
+        {
+            let mut dc_guard = self.data_channel.lock().await;
+            *dc_guard = None;
+        }
+
         Ok(())
     }
 
     pub fn get_connection_info(&self) -> TransportInfo {
-        // Implementation from your Transport trait impl
+        let local_port = self.local_port.unwrap_or(0);
         TransportInfo {
-            transport_type: "http".to_string(),
-            local_port: 3001,
+            transport_type: "tcp".to_string(),
+            local_port,
             target_port: Some(self.target_port),
-            connection_url: Some(format!("http://localhost:3001")),
-            instructions: "HTTP tunnel active".to_string(),
+            connection_url: Some(format!("localhost:{}", local_port)),
+            instructions: self.get_connection_instructions(),
         }
     }
 }
