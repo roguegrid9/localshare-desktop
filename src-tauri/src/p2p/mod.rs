@@ -406,21 +406,35 @@ impl P2PManager {
         log::info!("Received WebRTC signal from {} for grid {}", signal.to_user_id, signal.grid_id);
 
         let mut connections = self.connections.lock().await;
-        
-        // Try grid-only key first (when we're guest connecting to host)
+
+        // Try all possible connection keys
+        // 1. Try grid:user key first (most specific - for active P2P sessions)
+        let connection_key_specific = format!("{}:{}", signal.grid_id, signal.to_user_id);
+        if let Some(connection) = connections.get_mut(&connection_key_specific) {
+            log::debug!("Found connection with key: {}", connection_key_specific);
+            connection.handle_signal(signal.signal_data).await?;
+            return Ok(());
+        }
+
+        // 2. Try finding by prefix (when we're host, guest sends signals with to_user_id = host)
+        // We need to find the connection for that guest, which is stored as grid_id:guest_id
+        for (key, connection) in connections.iter_mut() {
+            if key.starts_with(&format!("{}:", signal.grid_id)) && key != &signal.grid_id {
+                log::debug!("Found P2P connection with key: {}", key);
+                connection.handle_signal(signal.signal_data).await?;
+                return Ok(());
+            }
+        }
+
+        // 3. Try grid-only key last (fallback for simple connections)
         if let Some(connection) = connections.get_mut(&signal.grid_id) {
+            // Check if this is an initialized connection (has peer_connection)
+            log::debug!("Found grid-only connection with key: {}", signal.grid_id);
             connection.handle_signal(signal.signal_data).await?;
             return Ok(());
         }
 
-        // Try grid:user key (when we're host and user is connecting to us)
-        let connection_key = format!("{}:{}", signal.grid_id, signal.to_user_id);
-        if let Some(connection) = connections.get_mut(&connection_key) {
-            connection.handle_signal(signal.signal_data).await?;
-            return Ok(());
-        }
-
-        log::warn!("No active connection found for WebRTC signal from {} in grid {}", 
+        log::warn!("No active connection found for WebRTC signal from {} in grid {}",
                   signal.to_user_id, signal.grid_id);
         Ok(())
     }
