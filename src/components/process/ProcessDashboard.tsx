@@ -232,12 +232,14 @@ function P2PConnectionSection({
   dashboard,
   gridId,
   processId,
-  availability
+  availability,
+  protocol
 }: {
   dashboard: ProcessDashboardType;
   gridId: string;
   processId: string;
   availability?: ProcessAvailability;
+  protocol?: string | null;
 }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'reconnecting'>('disconnected');
@@ -555,7 +557,18 @@ function P2PConnectionSection({
                 <div className="bg-green-500/10 border border-green-500/20 rounded p-2 mb-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-green-300/80">Local URL:</span>
-                    <code className="text-xs text-green-300 font-mono">{connectionUrl}</code>
+                    {protocol?.toLowerCase() === 'http' || protocol?.toLowerCase() === 'https' ? (
+                      <a
+                        href={connectionUrl.startsWith('http') ? connectionUrl.replace('http://', 'https://') : `https://${connectionUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-green-300 font-mono hover:text-green-200 underline underline-offset-2 transition-colors"
+                      >
+                        {connectionUrl.startsWith('http') ? connectionUrl.replace('http://', 'https://') : `https://${connectionUrl}`}
+                      </a>
+                    ) : (
+                      <code className="text-xs text-green-300 font-mono">{connectionUrl}</code>
+                    )}
                   </div>
                 </div>
               )}
@@ -684,6 +697,7 @@ function ComingSoonSection() {
 export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
   const [dashboard, setDashboard] = useState<ProcessDashboardType | null>(null);
   const [availability, setAvailability] = useState<ProcessAvailability | null>(null);
+  const [protocol, setProtocol] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout>();
@@ -694,7 +708,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         setLoading(true);
         setError(null);
       }
-      
+
       // Get process information from multiple sources
       const [processInfo, sharedProcesses, processDisplayName, processAvailability] = await Promise.all([
         invoke<any>('get_process_info', { processId }).catch(() => null),
@@ -711,6 +725,11 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
 
       // Find the shared process data
       const sharedProcess = sharedProcesses.find(p => p.id === processId);
+
+      // Extract protocol from shared process
+      if (sharedProcess?.config?.protocol) {
+        setProtocol(sharedProcess.config.protocol);
+      }
 
       // Debug logging
       console.log('ProcessDashboard debug:', {
@@ -886,6 +905,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         gridId={gridId}
         processId={processId}
         availability={availability || undefined}
+        protocol={protocol}
       />
 
       <ComingSoonSection />
