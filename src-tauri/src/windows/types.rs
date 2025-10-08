@@ -411,3 +411,103 @@ impl WindowState {
         self.tabs.len()
     }
 }
+
+impl TabContentType {
+    /// Check if two tab contents represent the same resource
+    /// Used for duplicate detection when opening tabs
+    pub fn matches(&self, other: &TabContentType) -> bool {
+        match (self, other) {
+            // Terminal tabs match if they have the same session ID
+            (TabContentType::Terminal { session_id: sid1, .. }, TabContentType::Terminal { session_id: sid2, .. }) => {
+                sid1 == sid2
+            },
+            // Text channels match if they have the same channel_id and grid_id
+            (
+                TabContentType::TextChannel { channel_id: cid1, grid_id: gid1, .. },
+                TabContentType::TextChannel { channel_id: cid2, grid_id: gid2, .. }
+            ) => {
+                cid1 == cid2 && gid1 == gid2
+            },
+            // Media channels match if they have the same channel_id and grid_id
+            (
+                TabContentType::MediaChannel { channel_id: cid1, grid_id: gid1, .. },
+                TabContentType::MediaChannel { channel_id: cid2, grid_id: gid2, .. }
+            ) => {
+                cid1 == cid2 && gid1 == gid2
+            },
+            // Voice channels match if they have the same channel_id and grid_id
+            (
+                TabContentType::VoiceChannel { data: data1 },
+                TabContentType::VoiceChannel { data: data2 }
+            ) => {
+                data1.channel_id == data2.channel_id && data1.grid_id == data2.grid_id
+            },
+            // Cross-match: VoiceChannel and MediaChannel with Voice type
+            (
+                TabContentType::VoiceChannel { data },
+                TabContentType::MediaChannel { channel_id, grid_id, media_type: MediaType::Voice, .. }
+            ) | (
+                TabContentType::MediaChannel { channel_id, grid_id, media_type: MediaType::Voice, .. },
+                TabContentType::VoiceChannel { data }
+            ) => {
+                &data.channel_id == channel_id && &data.grid_id == grid_id
+            },
+            // Processes match if they have the same process_id and grid_id
+            (
+                TabContentType::Process { process_id: pid1, grid_id: gid1, .. },
+                TabContentType::Process { process_id: pid2, grid_id: gid2, .. }
+            ) => {
+                pid1 == pid2 && gid1 == gid2
+            },
+            // Direct messages match if they have the same conversation_id
+            (
+                TabContentType::DirectMessage { conversation_id: cid1, .. },
+                TabContentType::DirectMessage { conversation_id: cid2, .. }
+            ) => {
+                cid1 == cid2
+            },
+            // Grid dashboards match if they have the same grid_id
+            (
+                TabContentType::GridDashboard { grid_id: gid1, .. },
+                TabContentType::GridDashboard { grid_id: gid2, .. }
+            ) => {
+                gid1 == gid2
+            },
+            // Welcome tabs always match (there should only be one)
+            (TabContentType::Welcome, TabContentType::Welcome) => true,
+            // Different types never match
+            _ => false,
+        }
+    }
+
+    /// Extract the grid_id from the content if it exists
+    pub fn get_grid_id(&self) -> Option<&str> {
+        match self {
+            TabContentType::Terminal { grid_id: Some(gid), .. } => Some(gid.as_str()),
+            TabContentType::TextChannel { grid_id, .. } => Some(grid_id.as_str()),
+            TabContentType::MediaChannel { grid_id, .. } => Some(grid_id.as_str()),
+            TabContentType::VoiceChannel { data } => Some(data.grid_id.as_str()),
+            TabContentType::Process { grid_id, .. } => Some(grid_id.as_str()),
+            TabContentType::GridDashboard { grid_id, .. } => Some(grid_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Extract the process_id from the content if it exists
+    pub fn get_process_id(&self) -> Option<&str> {
+        match self {
+            TabContentType::Process { process_id, .. } => Some(process_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Extract the channel_id from the content if it exists
+    pub fn get_channel_id(&self) -> Option<&str> {
+        match self {
+            TabContentType::TextChannel { channel_id, .. } => Some(channel_id.as_str()),
+            TabContentType::MediaChannel { channel_id, .. } => Some(channel_id.as_str()),
+            TabContentType::VoiceChannel { data } => Some(data.channel_id.as_str()),
+            _ => None,
+        }
+    }
+}

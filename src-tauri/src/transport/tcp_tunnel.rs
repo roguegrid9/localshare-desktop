@@ -172,7 +172,7 @@ impl TcpTunnel {
                         break;
                     }
 
-                    log::info!("📤 Sent {} bytes from local client to remote server over {} tunnel (connection {})", n, protocol, connection_id);
+                    log::debug!("Sent {} bytes from local client to remote server over {} tunnel", n, protocol);
                 }
                 Err(e) => {
                     log::error!("Failed to read from TCP connection: {}", e);
@@ -210,10 +210,10 @@ impl TcpTunnel {
         if let Some(writer) = connections.get(connection_id) {
             let mut writer_guard = writer.lock().await;
             writer_guard.write_all(data).await?;
-            log::info!("✅ Wrote {} bytes to TCP connection {}", data.len(), connection_id);
+            log::debug!("Wrote {} bytes to TCP connection {}", data.len(), connection_id);
             Ok(())
         } else {
-            log::error!("❌ TCP connection {} not found in active connections (have {} active)", connection_id, connections.len());
+            log::error!("TCP connection {} not found in active connections (have {} active)", connection_id, connections.len());
             Err(anyhow::anyhow!("TCP connection {} not found", connection_id))
         }
     }

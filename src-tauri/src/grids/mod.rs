@@ -11,20 +11,21 @@ use crate::auth::get_stored_token;
 use crate::websocket::WebSocketManager;
 use anyhow::{Result, Context};
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
 pub struct GridsService {
     client: CoordinatorClient,
     websocket_manager: Arc<Mutex<WebSocketManager>>,
     grids_state: Arc<Mutex<GridsState>>,
+    app_handle: AppHandle,
 }
 
 impl GridsService {
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
             client: CoordinatorClient::new(),
-            websocket_manager: Arc::new(Mutex::new(WebSocketManager::new(app_handle))),
+            websocket_manager: Arc::new(Mutex::new(WebSocketManager::new(app_handle.clone()))),
             grids_state: Arc::new(Mutex::new(GridsState {
                 grids: Vec::new(),
                 grid_members: std::collections::HashMap::new(),
@@ -32,11 +33,16 @@ impl GridsService {
                 last_updated: None,
                 websocket_connected: false,
             })),
+            app_handle,
         }
     }
 
     pub async fn get_websocket_manager(&self) -> Arc<Mutex<WebSocketManager>> {
         self.websocket_manager.clone()
+    }
+
+    pub fn get_app_handle(&self) -> &AppHandle {
+        &self.app_handle
     }
 
     pub async fn connect_websocket(&self) -> Result<()> {
@@ -88,12 +94,20 @@ impl GridsService {
             .context("No token available")?;
 
         let response = self.client.create_grid(&token, request).await?;
-        
+
         // Refresh grids list after creating
         if let Err(e) = self.fetch_grids().await {
             log::warn!("Failed to refresh grids list after creating grid: {}", e);
         }
-        
+
+        // Emit grid_created event to trigger UI refresh
+        if let Err(e) = self.app_handle.emit("grid_created", &serde_json::json!({
+            "grid_id": response.grid.id,
+            "grid_name": response.grid.name
+        })) {
+            log::error!("Failed to emit grid_created event: {}", e);
+        }
+
         log::info!("Created grid: {}", response.grid.name);
         Ok(response)
     }
@@ -191,12 +205,20 @@ impl GridsService {
         };
 
         let grid = self.client.join_grid(&token, request).await?;
-        
+
         // Refresh grids list after joining
         if let Err(e) = self.fetch_grids().await {
             log::warn!("Failed to refresh grids list after joining grid: {}", e);
         }
-        
+
+        // Emit grid_joined event to trigger UI refresh
+        if let Err(e) = self.app_handle.emit("grid_joined", &serde_json::json!({
+            "grid_id": grid.id,
+            "grid_name": grid.name
+        })) {
+            log::error!("Failed to emit grid_joined event: {}", e);
+        }
+
         log::info!("Joined grid: {}", grid.name);
         Ok(grid)
     }
@@ -496,13 +518,29 @@ impl GridsService {
             .context("No token available")?;
 
         self.client.update_member_role(&token, grid_id.clone(), user_id.clone(), new_role).await?;
-        
+
         // Refresh grid members after role change
         if let Err(e) = self.get_grid_details(grid_id).await {
             log::warn!("Failed to refresh grid members after role change: {}", e);
         }
-        
+
         log::info!("Successfully updated member role for: {}", user_id);
+        Ok(())
+    }
+
+    pub async fn update_grid_basic_info(&self, grid_id: String, name: String, description: Option<String>) -> Result<()> {
+        let token = get_stored_token()
+            .await
+            .context("No token available")?;
+
+        self.client.update_grid_basic_info(&token, grid_id.clone(), name, description).await?;
+
+        // Refresh grid data after update
+        if let Err(e) = self.fetch_grids().await {
+            log::warn!("Failed to refresh grids after basic info update: {}", e);
+        }
+
+        log::info!("Successfully updated grid basic info for: {}", grid_id);
         Ok(())
     }
 }

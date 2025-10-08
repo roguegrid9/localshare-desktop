@@ -370,10 +370,11 @@ impl MediaManager {
         let session_id = session_id.to_string();
         let track_id = track_id.to_string();
         let webrtc_config = self.webrtc_config.clone();
+        let app_handle = self.app_handle.clone();
 
-        // Start a task to continuously feed audio data to WebRTC
+        // Start a task to continuously feed audio data to browser via events (Hybrid approach)
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(10)); // 10ms intervals
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(20)); // 20ms chunks (50fps)
 
             loop {
                 interval.tick().await;
@@ -385,12 +386,18 @@ impl MediaManager {
                 let buffers = audio_buffers.lock().await;
                 if let Some(buffer) = buffers.get(&session_id) {
                     if let Some(audio_chunk) = buffer.get_webrtc_chunk(chunk_size).await {
-                        // In a real implementation, this would be sent to the WebRTC peer connection
-                        // For now, we just log that we have audio data ready
-                        log::trace!("Audio chunk ready for track {}: {} samples", track_id, audio_chunk.len());
-                        
-                        // TODO: Send audio_chunk to WebRTC track/sender
-                        // This would involve calling methods on the RTCRtpSender
+                        // Hybrid approach: Send audio chunks to browser via Tauri events
+                        // Browser will use native WebRTC to transmit
+                        if let Err(e) = app_handle.emit("audio_chunk_ready", &serde_json::json!({
+                            "session_id": session_id,
+                            "track_id": track_id,
+                            "samples": audio_chunk,
+                            "sample_rate": config.sample_rate,
+                            "channels": config.channels,
+                            "timestamp": chrono::Utc::now().timestamp_millis()
+                        })) {
+                            log::error!("Failed to emit audio chunk: {}", e);
+                        }
                     }
                 } else {
                     // Session buffer not found, exit task

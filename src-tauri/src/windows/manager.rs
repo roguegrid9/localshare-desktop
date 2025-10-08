@@ -52,12 +52,37 @@ impl WindowManager {
     }
 
     /// Create a new tab in the specified window (defaults to main window)
+    /// If a tab with matching content already exists, activate it instead
     pub async fn create_tab(
         &self,
         content: TabContentType,
         title: Option<String>,
         window_id: Option<String>,
     ) -> Result<Tab, String> {
+        // Check if a tab with this content already exists
+        if let Some((existing_window_id, existing_tab_id)) = self.find_existing_tab(&content).await {
+            log::info!("Tab with matching content already exists (tab: {}, window: {}), activating it instead of creating new", existing_tab_id, existing_window_id);
+
+            // Activate the existing tab
+            self.activate_tab(&existing_window_id, &existing_tab_id).await?;
+
+            // Focus the window containing the tab
+            if let Err(e) = self.focus_window(&existing_window_id).await {
+                log::warn!("Failed to focus window {}: {}", existing_window_id, e);
+            }
+
+            // Get and return the existing tab
+            let windows = self.windows.read().await;
+            let window = windows.get(&existing_window_id)
+                .ok_or_else(|| format!("Window {} not found", existing_window_id))?;
+            let tab = window.tabs.iter().find(|t| t.id == existing_tab_id)
+                .ok_or("Tab not found")?
+                .clone();
+
+            return Ok(tab);
+        }
+
+        // No existing tab found, create a new one
         let target_window_id = window_id.unwrap_or_else(|| self.main_window_id.clone());
         let tab = Tab::new(content, title);
 
@@ -65,14 +90,14 @@ impl WindowManager {
             let mut windows = self.windows.write().await;
             let window = windows.get_mut(&target_window_id)
                 .ok_or_else(|| format!("Window {} not found", target_window_id))?;
-            
+
             window.add_tab(tab.clone())?;
         }
 
         // Emit window state change event
         self.emit_window_event(WindowEventType::TabCreated, &target_window_id, Some(&tab.id)).await?;
 
-        log::info!("Created tab {} in window {}", tab.id, target_window_id);
+        log::info!("Created new tab {} in window {}", tab.id, target_window_id);
         Ok(tab)
     }
 
@@ -500,6 +525,122 @@ impl WindowManager {
         stats.insert("window_types".to_string(), serde_json::json!(window_types));
 
         stats
+    }
+
+    /// Find an existing tab with matching content across all windows
+    /// Returns (window_id, tab_id) if found
+    pub async fn find_existing_tab(&self, content: &TabContentType) -> Option<(String, String)> {
+        let windows = self.windows.read().await;
+
+        for (window_id, window) in windows.iter() {
+            for tab in &window.tabs {
+                if tab.content.matches(content) {
+                    log::info!("Found existing tab {} in window {} matching content", tab.id, window_id);
+                    return Some((window_id.clone(), tab.id.clone()));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Close all tabs belonging to a specific grid
+    /// Returns list of closed tab IDs
+    pub async fn close_tabs_by_grid(&self, grid_id: &str) -> Result<Vec<String>, String> {
+        log::info!("Closing all tabs for grid: {}", grid_id);
+        let mut closed_tabs = Vec::new();
+
+        // Collect tabs to close (window_id, tab_id)
+        let tabs_to_close: Vec<(String, String)> = {
+            let windows = self.windows.read().await;
+            windows.iter()
+                .flat_map(|(window_id, window)| {
+                    window.tabs.iter()
+                        .filter(|tab| tab.content.get_grid_id() == Some(grid_id))
+                        .map(|tab| (window_id.clone(), tab.id.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+
+        // Close each tab
+        for (window_id, tab_id) in tabs_to_close {
+            log::info!("Closing tab {} from window {} (belongs to grid {})", tab_id, window_id, grid_id);
+            if let Err(e) = self.close_tab(&window_id, &tab_id).await {
+                log::warn!("Failed to close tab {} from window {}: {}", tab_id, window_id, e);
+            } else {
+                closed_tabs.push(tab_id);
+            }
+        }
+
+        log::info!("Closed {} tabs for grid {}", closed_tabs.len(), grid_id);
+        Ok(closed_tabs)
+    }
+
+    /// Close all tabs belonging to a specific process
+    /// Returns list of closed tab IDs
+    pub async fn close_tabs_by_process(&self, process_id: &str) -> Result<Vec<String>, String> {
+        log::info!("Closing all tabs for process: {}", process_id);
+        let mut closed_tabs = Vec::new();
+
+        // Collect tabs to close (window_id, tab_id)
+        let tabs_to_close: Vec<(String, String)> = {
+            let windows = self.windows.read().await;
+            windows.iter()
+                .flat_map(|(window_id, window)| {
+                    window.tabs.iter()
+                        .filter(|tab| tab.content.get_process_id() == Some(process_id))
+                        .map(|tab| (window_id.clone(), tab.id.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+
+        // Close each tab
+        for (window_id, tab_id) in tabs_to_close {
+            log::info!("Closing tab {} from window {} (belongs to process {})", tab_id, window_id, process_id);
+            if let Err(e) = self.close_tab(&window_id, &tab_id).await {
+                log::warn!("Failed to close tab {} from window {}: {}", tab_id, window_id, e);
+            } else {
+                closed_tabs.push(tab_id);
+            }
+        }
+
+        log::info!("Closed {} tabs for process {}", closed_tabs.len(), process_id);
+        Ok(closed_tabs)
+    }
+
+    /// Close all tabs belonging to a specific channel
+    /// Returns list of closed tab IDs
+    pub async fn close_tabs_by_channel(&self, channel_id: &str) -> Result<Vec<String>, String> {
+        log::info!("Closing all tabs for channel: {}", channel_id);
+        let mut closed_tabs = Vec::new();
+
+        // Collect tabs to close (window_id, tab_id)
+        let tabs_to_close: Vec<(String, String)> = {
+            let windows = self.windows.read().await;
+            windows.iter()
+                .flat_map(|(window_id, window)| {
+                    window.tabs.iter()
+                        .filter(|tab| tab.content.get_channel_id() == Some(channel_id))
+                        .map(|tab| (window_id.clone(), tab.id.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
+
+        // Close each tab
+        for (window_id, tab_id) in tabs_to_close {
+            log::info!("Closing tab {} from window {} (belongs to channel {})", tab_id, window_id, channel_id);
+            if let Err(e) = self.close_tab(&window_id, &tab_id).await {
+                log::warn!("Failed to close tab {} from window {}: {}", tab_id, window_id, e);
+            } else {
+                closed_tabs.push(tab_id);
+            }
+        }
+
+        log::info!("Closed {} tabs for channel {}", closed_tabs.len(), channel_id);
+        Ok(closed_tabs)
     }
 
     /// Serialize window state for persistence

@@ -2,7 +2,7 @@ use crate::api::types::{Grid, GridsState, SearchUsersResponse, CreateGridRequest
 use crate::grids::GridsService;
 use crate::api::types::{GridPermissions, ProcessPermissions, UpdateGridSettingsRequest, UpdateMemberPermissionsRequest, GetAuditLogRequest, GetAuditLogResponse};
 use crate::AppState;
-use tauri::State;
+use tauri::{State, Emitter};
 
 
 // Grid service initialization
@@ -490,16 +490,57 @@ pub async fn delete_grid_process(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Tauri command: delete_grid_process called for: {}", process_id);
-    
-    // First try to delete from server
-    let service_state = state.grids_service.lock().await;
-    if let Some(service) = service_state.as_ref() {
-        if let Err(e) = service.delete_grid_process(grid_id.clone(), process_id.clone()).await {
-            log::warn!("Failed to delete process from server (may not exist there): {}", e);
-            // Continue to local cleanup even if server deletion fails
+
+    // Check if process exists in shared_processes state (prevent double deletion)
+    let process_exists = {
+        let shared_processes = state.shared_processes.lock().await;
+        shared_processes.contains_key(&process_id)
+    };
+
+    if !process_exists {
+        log::warn!("Process {} does not exist in shared_processes state (already deleted?), skipping deletion", process_id);
+        return Ok(());
+    }
+
+    // First try to delete from server AND emit event
+    {
+        let service_state = state.grids_service.lock().await;
+        if let Some(service) = service_state.as_ref() {
+            if let Err(e) = service.delete_grid_process(grid_id.clone(), process_id.clone()).await {
+                log::warn!("Failed to delete process from server (may not exist there): {}", e);
+                // Continue to local cleanup even if server deletion fails
+            }
+
+            // Emit event to trigger UI refresh EARLY - before other cleanup
+            if let Err(e) = service.get_app_handle().emit("process_deleted", serde_json::json!({
+                "grid_id": grid_id,
+                "process_id": process_id
+            })) {
+                log::error!("Failed to emit process_deleted event: {}", e);
+            } else {
+                log::info!("Emitted process_deleted event for process {}", process_id);
+            }
+        }
+    } // Drop the lock here
+
+    // Remove from shared_processes state
+    {
+        let mut shared_processes = state.shared_processes.lock().await;
+        shared_processes.remove(&process_id);
+        log::info!("Removed process {} from shared_processes state", process_id);
+    }
+
+    // CRITICAL: Stop the heartbeat task to prevent re-registration
+    {
+        let mut heartbeats = state.shared_process_heartbeats.lock().await;
+        if let Some(heartbeat_task) = heartbeats.remove(&process_id) {
+            heartbeat_task.abort();
+            log::info!("Stopped and removed heartbeat task for process {}", process_id);
+        } else {
+            log::warn!("No heartbeat task found for process {}", process_id);
         }
     }
-    
+
     // Also remove from local process manager
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
@@ -515,7 +556,25 @@ pub async fn delete_grid_process(
             }
         }
     }
-    
+
+    // Close all tabs associated with this process (non-blocking)
+    let window_manager_clone = state.window_manager.clone();
+    let process_id_clone = process_id.clone();
+    tokio::spawn(async move {
+        let window_manager = window_manager_clone.lock().await;
+        if let Some(manager) = window_manager.as_ref() {
+            match manager.close_tabs_by_process(&process_id_clone).await {
+                Ok(closed_tabs) => {
+                    log::info!("Closed {} tabs for deleted process {}", closed_tabs.len(), process_id_clone);
+                }
+                Err(e) => {
+                    log::warn!("Failed to close tabs for process {}: {}", process_id_clone, e);
+                }
+            }
+        }
+    });
+
+    log::info!("delete_grid_process command completing successfully");
     Ok(())
 }
 
@@ -526,16 +585,36 @@ pub async fn delete_grid_channel(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Tauri command: delete_grid_channel called for: {}", channel_id);
-    
+
     let service_state = state.grids_service.lock().await;
     if let Some(service) = service_state.as_ref() {
-        service.delete_grid_channel(grid_id, channel_id).await.map_err(|e| {
+        if let Err(e) = service.delete_grid_channel(grid_id, channel_id.clone()).await {
             log::error!("Failed to delete channel: {}", e);
-            e.to_string()
-        })
+            return Err(e.to_string());
+        }
     } else {
-        Err("Grids service not initialized".to_string())
+        return Err("Grids service not initialized".to_string());
     }
+
+    // Close all tabs associated with this channel (non-blocking)
+    let window_manager_clone = state.window_manager.clone();
+    let channel_id_clone = channel_id.clone();
+    tokio::spawn(async move {
+        let window_manager = window_manager_clone.lock().await;
+        if let Some(manager) = window_manager.as_ref() {
+            match manager.close_tabs_by_channel(&channel_id_clone).await {
+                Ok(closed_tabs) => {
+                    log::info!("Closed {} tabs for deleted channel {}", closed_tabs.len(), channel_id_clone);
+                }
+                Err(e) => {
+                    log::warn!("Failed to close tabs for channel {}: {}", channel_id_clone, e);
+                }
+            }
+        }
+    });
+
+    log::info!("delete_grid_channel command completing successfully");
+    Ok(())
 }
 
 #[tauri::command]
@@ -546,11 +625,31 @@ pub async fn update_member_role(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Tauri command: update_member_role called for: {} to {}", user_id, new_role);
-    
+
     let service_state = state.grids_service.lock().await;
     if let Some(service) = service_state.as_ref() {
         service.update_member_role(grid_id, user_id, new_role).await.map_err(|e| {
             log::error!("Failed to update member role: {}", e);
+            e.to_string()
+        })
+    } else {
+        Err("Grids service not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn update_grid_basic_info(
+    grid_id: String,
+    name: String,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Tauri command: update_grid_basic_info called for grid: {}", grid_id);
+
+    let service_state = state.grids_service.lock().await;
+    if let Some(service) = service_state.as_ref() {
+        service.update_grid_basic_info(grid_id, name, description).await.map_err(|e| {
+            log::error!("Failed to update grid basic info: {}", e);
             e.to_string()
         })
     } else {

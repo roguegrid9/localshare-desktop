@@ -359,18 +359,27 @@ impl ResourceCodesService {
     // ===== VALIDATION HELPERS =====
 
     pub fn validate_access_code(code: &str) -> bool {
-        // Validate XXX-XXX format
-        let code_regex = regex::Regex::new(r"^[A-Z0-9]{3}-[A-Z0-9]{3}$").unwrap();
-        code_regex.is_match(code)
+        // Support multiple formats for flexibility:
+        // - XXX-XXX (6 chars, old format)
+        // - XXX-XXXX (7 chars, new shorter format)
+        // - XXXXXXX (7 chars, no separator)
+        let cleaned = code.replace(|c: char| !c.is_alphanumeric(), "").to_uppercase();
+        cleaned.len() >= 6 && cleaned.len() <= 8 && cleaned.chars().all(|c| c.is_alphanumeric())
     }
 
     pub fn format_access_code(code: &str) -> String {
-        // Auto-format input to XXX-XXX
+        // Auto-format input to XXX-XXXX (3-4 format for better memorability)
         let cleaned = code.replace(|c: char| !c.is_alphanumeric(), "").to_uppercase();
+
         if cleaned.len() <= 3 {
             return cleaned;
+        } else if cleaned.len() <= 7 {
+            // Format as XXX-XXXX
+            format!("{}-{}", &cleaned[..3], &cleaned[3..])
+        } else {
+            // Trim to 7 chars max and format
+            format!("{}-{}", &cleaned[..3], &cleaned[3..7])
         }
-        format!("{}-{}", &cleaned[..3], &cleaned[3..6.min(cleaned.len())])
     }
 
     

@@ -240,11 +240,15 @@ function P2PConnectionSection({
   availability?: ProcessAvailability;
 }) {
   const [isConnecting, setIsConnecting] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'reconnecting'>('disconnected');
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
   const [transportId, setTransportId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [reconnectionAttempt, setReconnectionAttempt] = useState<number>(0);
+  const [maxReconnectionAttempts, setMaxReconnectionAttempts] = useState<number>(5);
+  const [reconnectionDelay, setReconnectionDelay] = useState<number>(0);
+  const [reconnectionCountdown, setReconnectionCountdown] = useState<number>(0);
 
   // Auto-host the grid when component loads
   useEffect(() => {
@@ -272,6 +276,8 @@ function P2PConnectionSection({
         setConnectionUrl(`localhost:${data.local_port}`);
         setTransportId(data.transport_id);
         setConnectionStatus('connected');
+        setErrorMessage(null);
+        setReconnectionAttempt(0); // Reset reconnection state
         console.log(`Transport tunnel ready on localhost:${data.local_port}`);
       }
     }).then(fn => {
@@ -282,6 +288,67 @@ function P2PConnectionSection({
       if (unlisten) unlisten();
     };
   }, [processId, gridId]);
+
+  // Listen for reconnection events
+  useEffect(() => {
+    const unlisteners: (() => void)[] = [];
+
+    listen('p2p_reconnecting', (event: any) => {
+      const data = event.payload;
+      if (data.grid_id === gridId) {
+        setConnectionStatus('reconnecting');
+        setReconnectionAttempt(data.attempt);
+        setMaxReconnectionAttempts(data.max_attempts);
+        setReconnectionDelay(data.delay_seconds);
+        setReconnectionCountdown(data.delay_seconds);
+        setErrorMessage(null);
+        console.log(`Reconnecting: attempt ${data.attempt}/${data.max_attempts}`);
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    listen('p2p_reconnected', (event: any) => {
+      const data = event.payload;
+      if (data.grid_id === gridId) {
+        setConnectionStatus('connected');
+        setReconnectionAttempt(0);
+        setErrorMessage(null);
+        console.log('Successfully reconnected!');
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    listen('p2p_reconnection_failed', (event: any) => {
+      const data = event.payload;
+      if (data.grid_id === gridId) {
+        setConnectionStatus('disconnected');
+        setReconnectionAttempt(0);
+        setErrorMessage(`❌ Failed to reconnect after ${data.max_attempts} attempts. Please try reconnecting manually.`);
+        console.error('Reconnection failed after max attempts');
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    listen('host_disconnected', (event: any) => {
+      const data = event.payload;
+      if (data.grid_id === gridId) {
+        setConnectionStatus('reconnecting');
+        setErrorMessage('🔌 Connection lost. Attempting to reconnect...');
+        console.log('Host disconnected, will attempt reconnection');
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    return () => {
+      unlisteners.forEach(fn => fn());
+    };
+  }, [gridId]);
+
+  // Countdown timer for reconnection delay
+  useEffect(() => {
+    if (connectionStatus === 'reconnecting' && reconnectionCountdown > 0) {
+      const timer = setTimeout(() => {
+        setReconnectionCountdown(prev => Math.max(0, prev - 1));
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [connectionStatus, reconnectionCountdown]);
 
   // Auto-connect for guests only (hosts don't need P2P connection to their own process)
   useEffect(() => {
@@ -392,7 +459,7 @@ function P2PConnectionSection({
     <Section title={
       <div className="flex items-center gap-2">
         <Share2 className="w-4 h-4" />
-        {isHosting ? 'Hosting Process' : isAvailable ? 'Remote Process Available' : 'P2P Connection'}
+        Connection & Sharing
       </div>
     }>
       <div className={`rounded-lg border p-6 ${
@@ -448,25 +515,60 @@ function P2PConnectionSection({
               <div className="flex items-center gap-2 mb-2">
                 <div className={`w-2 h-2 rounded-full ${
                   connectionStatus === 'connected' ? 'bg-green-400' :
+                  connectionStatus === 'reconnecting' ? 'bg-orange-400 animate-pulse' :
                   connectionStatus === 'connecting' ? 'bg-yellow-400 animate-pulse' :
                   'bg-gray-400'
                 }`} />
-                <span className="text-sm text-white/80">
-                  {connectionStatus === 'connected' ? 'Connected' :
-                   connectionStatus === 'connecting' ? 'Connecting...' :
-                   'Not Connected'}
+                <span className="text-sm text-white/80 font-medium">
+                  {connectionStatus === 'connected' ? '✓ Connected' :
+                   connectionStatus === 'reconnecting' ? '🔄 Reconnecting...' :
+                   connectionStatus === 'connecting' ? '⏳ Connecting...' :
+                   '○ Disconnected'}
                 </span>
               </div>
 
-              {connectionUrl && (
-                <div className="bg-black/30 rounded p-2 mb-2">
-                  <code className="text-xs text-green-300">{connectionUrl}</code>
+              {/* Reconnection Progress */}
+              {connectionStatus === 'reconnecting' && reconnectionAttempt > 0 && (
+                <div className="bg-orange-500/10 border border-orange-500/20 rounded p-3 mb-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-orange-300 font-medium">
+                      Attempt {reconnectionAttempt} of {maxReconnectionAttempts}
+                    </span>
+                    <span className="text-xs text-orange-400 font-mono">
+                      {reconnectionCountdown > 0 ? `${reconnectionCountdown}s` : 'Connecting...'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-orange-900/20 rounded-full h-1.5">
+                    <div
+                      className="bg-orange-400 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${(reconnectionAttempt / maxReconnectionAttempts) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-orange-300/80 mt-2 flex items-center gap-1">
+                    <Activity className="w-3 h-3 animate-spin" />
+                    Auto-reconnection in progress. Connection will restore automatically.
+                  </p>
+                </div>
+              )}
+
+              {connectionUrl && connectionStatus === 'connected' && (
+                <div className="bg-green-500/10 border border-green-500/20 rounded p-2 mb-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-green-300/80">Local URL:</span>
+                    <code className="text-xs text-green-300 font-mono">{connectionUrl}</code>
+                  </div>
                 </div>
               )}
 
               {errorMessage && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded p-2 mb-2">
-                  <p className="text-xs text-red-300">{errorMessage}</p>
+                <div className={`border rounded p-3 mb-2 ${
+                  errorMessage.includes('❌')
+                    ? 'bg-red-500/10 border-red-500/20'
+                    : 'bg-yellow-500/10 border-yellow-500/20'
+                }`}>
+                  <p className={`text-xs ${
+                    errorMessage.includes('❌') ? 'text-red-300' : 'text-yellow-300'
+                  }`}>{errorMessage}</p>
                 </div>
               )}
             </div>
@@ -484,14 +586,16 @@ function P2PConnectionSection({
               <div className="flex gap-2">
                 <button
                   onClick={handleConnectAsGuest}
-                  disabled={isConnecting}
+                  disabled={isConnecting || connectionStatus === 'reconnecting'}
                   className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    isConnecting
+                    isConnecting || connectionStatus === 'reconnecting'
                       ? 'bg-yellow-600/50 text-yellow-300 cursor-wait'
                       : 'bg-yellow-600 text-white hover:bg-yellow-700'
                   }`}
                 >
-                  {isConnecting ? 'Connecting...' : 'Connect to Process'}
+                  {connectionStatus === 'reconnecting' ? 'Reconnecting...' :
+                   isConnecting ? 'Connecting...' :
+                   'Connect to Process'}
                 </button>
               </div>
             )}
@@ -500,14 +604,19 @@ function P2PConnectionSection({
               <div className="flex gap-2">
                 <button
                   onClick={handleDisconnect}
-                  className="px-4 py-2 rounded-lg font-medium text-sm transition-all bg-red-600 text-white hover:bg-red-700"
+                  disabled={connectionStatus === 'reconnecting'}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                    connectionStatus === 'reconnecting'
+                      ? 'bg-red-600/50 text-red-300 cursor-not-allowed'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                  }`}
                 >
                   Disconnect
                 </button>
               </div>
             )}
 
-            {isHosting && connectionStatus !== 'connected' && (
+            {isHosting && connectionStatus !== 'connected' && connectionStatus !== 'reconnecting' && (
               <div className="flex gap-2">
                 <button
                   onClick={handleConnect}
@@ -532,16 +641,22 @@ function P2PConnectionSection({
                 Process must be running to share via P2P
               </p>
             )}
-            {dashboard.status === 'running' && connectionStatus === 'disconnected' && !isConnecting && (
+            {dashboard.status === 'running' && connectionStatus === 'disconnected' && !isConnecting && !errorMessage && (
               <p className="text-xs text-blue-300 mt-3 flex items-center gap-1.5">
                 <Info className="w-3 h-3" />
-                Waiting for P2P connection to establish...
+                Ready to connect via P2P
               </p>
             )}
             {connectionStatus === 'connected' && (
               <p className="text-xs text-green-300 mt-3 flex items-center gap-1.5">
                 <Share2 className="w-3 h-3" />
-                Process is accessible to grid members via P2P
+                {isHosting ? 'Process is accessible to grid members' : 'Connected to remote process'}
+              </p>
+            )}
+            {connectionStatus === 'reconnecting' && (
+              <p className="text-xs text-orange-300 mt-3 flex items-center gap-1.5">
+                <Activity className="w-3 h-3 animate-spin" />
+                Auto-reconnection in progress...
               </p>
             )}
           </div>

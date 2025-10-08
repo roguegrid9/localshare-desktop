@@ -72,6 +72,40 @@ pub async fn disconnect_websocket(
 }
 
 #[tauri::command]
+pub async fn send_voice_webrtc_signal(
+    channel_id: String,
+    grid_id: String,
+    to_user_id: String,
+    signal_data: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Sending voice WebRTC signal to user: {}", to_user_id);
+
+    let websocket_guard = state.websocket_manager.lock().await;
+    if let Some(ws_manager) = websocket_guard.as_ref() {
+        let message = serde_json::json!({
+            "type": "voice_webrtc_signal",
+            "payload": {
+                "channel_id": channel_id,
+                "grid_id": grid_id,
+                "to_user_id": to_user_id,
+                "signal_data": signal_data,
+                "media_type": "audio",
+                "connection_type": "mesh"
+            }
+        });
+
+        ws_manager.send_message(message).await
+            .map_err(|e| format!("Failed to send voice WebRTC signal: {}", e))?;
+
+        log::debug!("Voice WebRTC signal sent successfully");
+        Ok(())
+    } else {
+        Err("WebSocket not connected".to_string())
+    }
+}
+
+#[tauri::command]
 pub async fn is_websocket_connected(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {

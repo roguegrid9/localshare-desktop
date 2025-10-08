@@ -148,11 +148,38 @@ pub async fn initialize_app_storage() -> Result<(), String> {
 pub async fn update_username(username: String) -> Result<(), String> {
     log::info!("Tauri command: update_username called");
     log::info!("New username: {}", username);
-    
+
     crate::auth::update_user_username(username)
         .await
         .map_err(|e| {
             log::error!("Failed to update username: {}", e);
+            e.to_string()
+        })
+}
+
+// Update display name for authenticated users
+#[tauri::command]
+pub async fn update_display_name(display_name: String) -> Result<(), String> {
+    log::info!("Tauri command: update_display_name called");
+    log::info!("New display name: {}", display_name);
+
+    crate::auth::update_user_display_name(display_name)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to update display name: {}", e);
+            e.to_string()
+        })
+}
+
+// Get current user information
+#[tauri::command]
+pub async fn get_current_user() -> Result<crate::api::CurrentUserResponse, String> {
+    log::info!("Tauri command: get_current_user called");
+
+    crate::auth::get_current_user_info()
+        .await
+        .map_err(|e| {
+            log::error!("Failed to get current user: {}", e);
             e.to_string()
         })
 }
@@ -203,22 +230,263 @@ pub async fn get_auth_token() -> Result<String, String> {
         })
 }
 
+// Custom OAuth callback HTML response
+const OAUTH_SUCCESS_HTML: &str = r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Successful - RogueGrid9</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0B0D10;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: #111319;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 48px 40px;
+            max-width: 440px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .logo {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 24px;
+            background: linear-gradient(135deg, #FF8A00 0%, #FF3D00 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleIn 0.3s ease-out;
+        }
+
+        .logo svg {
+            width: 28px;
+            height: 28px;
+            color: white;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: white;
+            animation: fadeInUp 0.4s ease-out 0.1s both;
+        }
+
+        p {
+            font-size: 15px;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.6;
+            margin-bottom: 32px;
+            animation: fadeInUp 0.4s ease-out 0.2s both;
+        }
+
+        .status-box {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            animation: fadeInUp 0.4s ease-out 0.3s both;
+        }
+
+        .status-box .icon {
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-box .message {
+            color: rgba(34, 197, 94, 0.9);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .instructions {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 24px;
+            animation: fadeInUp 0.4s ease-out 0.4s both;
+        }
+
+        .close-button {
+            width: 100%;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #FF8A00 0%, #FF3D00 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            animation: fadeInUp 0.4s ease-out 0.5s both;
+        }
+
+        .close-button:hover {
+            opacity: 0.9;
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+
+        <h1>Successfully Authenticated</h1>
+
+        <p>
+            You're all set! Return to RogueGrid9 to continue.
+        </p>
+
+        <div class="status-box">
+            <span class="icon">✓</span>
+            <span class="message">Authentication complete</span>
+        </div>
+
+        <div class="instructions">
+            You can safely close this window or it will close automatically.
+        </div>
+
+        <button class="close-button" onclick="tryClose()">Close Window</button>
+    </div>
+
+    <script>
+        // Try multiple methods to close the window
+        function tryClose() {
+            // Method 1: Standard close
+            window.close();
+
+            // Method 2: If still open after 100ms, try alternative
+            setTimeout(() => {
+                if (!window.closed) {
+                    // Try to close with opener
+                    if (window.opener) {
+                        window.opener = null;
+                        window.close();
+                    }
+
+                    // If still can't close, navigate away
+                    setTimeout(() => {
+                        if (!window.closed) {
+                            window.location = 'about:blank';
+                        }
+                    }, 100);
+                }
+            }, 100);
+        }
+
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+            tryClose();
+        }, 3000);
+
+        // Also try to close when user clicks anywhere
+        document.addEventListener('click', tryClose);
+    </script>
+</body>
+</html>
+"#;
+
 // Start OAuth callback server and return the port
 #[tauri::command]
 pub async fn start_oauth_server(window: tauri::Window) -> Result<u16, String> {
     use tauri::Emitter;
+    use tiny_http::{Server, Response};
+    use tokio::task;
+
     log::info!("Tauri command: start_oauth_server called");
 
-    tauri_plugin_oauth::start(move |url| {
-        log::info!("OAuth callback received: {}", url);
+    // Find an available port
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to bind to port: {}", e))?;
 
-        // Emit the callback URL to the frontend
-        if let Err(e) = window.emit("oauth-callback", url.clone()) {
-            log::error!("Failed to emit OAuth callback event: {}", e);
+    let port = listener.local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?
+        .port();
+
+    drop(listener); // Release the port for tiny_http
+
+    log::info!("Starting OAuth server on port {}", port);
+
+    // Start HTTP server in background
+    task::spawn_blocking(move || {
+        let server = match Server::http(format!("127.0.0.1:{}", port)) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to start OAuth HTTP server: {}", e);
+                return;
+            }
+        };
+
+        log::info!("OAuth callback server listening on port {}", port);
+
+        // Handle only one request (the OAuth callback)
+        if let Ok(Some(request)) = server.recv_timeout(std::time::Duration::from_secs(300)) {
+            let url = format!("http://localhost:{}{}", port, request.url());
+            log::info!("OAuth callback received: {}", url);
+
+            // Send success HTML response
+            let response = Response::from_string(OAUTH_SUCCESS_HTML)
+                .with_header(
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap()
+                );
+
+            if let Err(e) = request.respond(response) {
+                log::error!("Failed to send OAuth response: {}", e);
+            }
+
+            // Emit the callback URL to the frontend
+            if let Err(e) = window.emit("oauth-callback", url) {
+                log::error!("Failed to emit OAuth callback event: {}", e);
+            }
         }
-    })
-    .map_err(|e| {
-        log::error!("Failed to start OAuth server: {}", e);
-        e.to_string()
-    })
+
+        log::info!("OAuth callback server stopped");
+    });
+
+    Ok(port)
 }

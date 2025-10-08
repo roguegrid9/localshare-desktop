@@ -1213,7 +1213,33 @@ impl CoordinatorClient {
         
         Ok(())
     }
-    
+
+    /// Update user display name
+    pub async fn update_display_name(&self, token: &str, display_name: String) -> Result<()> {
+        let url = format!("{}/api/v1/users/display-name", self.base_url);
+
+        let request_body = serde_json::json!({
+            "display_name": display_name
+        });
+
+        let response = self.client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send update display name request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Display name update failed with status {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
     /// Check username availability
     pub async fn check_username_availability(&self, username: String) -> Result<CheckUsernameAvailabilityResponse> {
         let url = format!("{}/api/v1/users/username/check?username={}",
@@ -1398,14 +1424,23 @@ impl CoordinatorClient {
         grid_id: &str,
         channel_id: &str,
     ) -> Result<serde_json::Value> {
-        let url = format!("{}/api/v1/grids/{}/channels/{}/voice/join", 
+        let url = format!("{}/api/v1/grids/{}/channels/{}/voice/join",
                         self.base_url, grid_id, channel_id);
-        
+
         log::info!("Joining voice channel {} in grid {}", channel_id, grid_id);
+
+        // Build request body
+        let request_body = serde_json::json!({
+            "audio_quality": "medium",
+            "start_muted": false,
+            "start_deafened": false,
+            "connection_type": "mesh"
+        });
 
         let response = self.client
             .post(&url)
             .bearer_auth(token)
+            .json(&request_body)
             .send()
             .await
             .context("Failed to join voice channel")?;
@@ -1418,7 +1453,7 @@ impl CoordinatorClient {
 
         let result: serde_json::Value = response.json().await
             .context("Failed to parse join voice channel response")?;
-        
+
         log::info!("Successfully joined voice channel {}", channel_id);
         Ok(result)
     }
@@ -1717,6 +1752,41 @@ impl CoordinatorClient {
             
             log::error!("Failed to update member role with status {}: {}", status, error_text);
             anyhow::bail!("Failed to update member role ({}): {}", status, error_text);
+        }
+    }
+
+    pub async fn update_grid_basic_info(&self, token: &str, grid_id: String, name: String, description: Option<String>) -> Result<()> {
+        let url = format!("{}/api/v1/grids/{}", self.base_url, grid_id);
+
+        let request_body = serde_json::json!({
+            "name": name,
+            "description": description
+        });
+
+        log::info!("Updating grid {} basic info", grid_id);
+
+        let response = self
+            .client
+            .put(&url)
+            .bearer_auth(token)
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to update grid basic info")?;
+
+        let status = response.status();
+
+        if status.is_success() {
+            log::info!("Successfully updated grid basic info for grid: {}", grid_id);
+            Ok(())
+        } else {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            log::error!("Failed to update grid basic info with status {}: {}", status, error_text);
+            anyhow::bail!("Failed to update grid basic info ({}): {}", status, error_text);
         }
     }
 

@@ -467,10 +467,11 @@ impl P2PConnection {
                 let mut sent = self.bytes_sent.lock().await;
                 *sent += data_len;
             }
-            
+
+
             log::debug!("Sent {} bytes via P2P data channel", data_len);
         } else {
-            return Err(anyhow::anyhow!("Data channel not available"));
+            return Err(anyhow::anyhow!("🔌 Connection lost. The P2P connection is not available. Auto-reconnection will attempt to restore the connection."));
         }
         Ok(())
     }
@@ -727,6 +728,32 @@ impl P2PConnection {
                 "transport_stopped",
                 &serde_json::json!({ "transport_id": transport_id }),
             )?;
+        }
+
+        Ok(())
+    }
+
+    /// Stop all active transports (e.g., when process crashes or disconnects)
+    pub async fn stop_all_transports(&self) -> Result<()> {
+        log::info!("Stopping all transports for session {}", self.session_id);
+
+        let mut transports = self.active_transports.lock().await;
+        let transport_ids: Vec<String> = transports.keys().cloned().collect();
+
+        for transport_id in transport_ids {
+            if let Some(mut transport) = transports.remove(&transport_id) {
+                if let Err(e) = transport.stop().await {
+                    log::error!("Failed to stop transport {}: {}", transport_id, e);
+                } else {
+                    log::info!("Stopped transport: {}", transport_id);
+                }
+
+                // Emit transport stopped event
+                self.app_handle.emit(
+                    "transport_stopped",
+                    &serde_json::json!({ "transport_id": transport_id }),
+                ).ok();
+            }
         }
 
         Ok(())
@@ -1223,7 +1250,7 @@ impl P2PConnection {
                         if let Some(msg_type) = json_msg.get("type").and_then(|t| t.as_str()) {
                             match msg_type {
                                 "tcp_data" => {
-                                    log::info!("Received TCP data over P2P");
+                                    log::debug!("Received TCP data over P2P");
                                     // Forward to actual process port if we're the host
                                     if is_host {
                                         if let (Some(connection_id), Some(target_port), Some(data_b64)) = (
@@ -1233,7 +1260,7 @@ impl P2PConnection {
                                         ) {
                                             use base64::{Engine as _, engine::general_purpose};
                                             if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
-                                                log::info!("📥 Host received {} bytes from client (connection {}) to forward to localhost:{}", tcp_data.len(), connection_id, target_port);
+                                                log::debug!("Host received {} bytes from client (connection {}) to forward to localhost:{}", tcp_data.len(), connection_id, target_port);
                                                 // Get or create TCP connection to target port
                                                 let connection_key = format!("{}_{}", connection_id, target_port);
 
@@ -1268,7 +1295,7 @@ impl P2PConnection {
                                                                         Ok(n) => {
                                                                             // Send response back over WebRTC
                                                                             let response = &buffer[..n];
-                                                                            log::info!("📤 Host read {} bytes from real server (localhost:{}), sending back to client", n, target_port);
+                                                                            log::debug!("Host read {} bytes from server (localhost:{}), sending to client", n, target_port);
                                                                             let response_msg = serde_json::json!({
                                                                                 "type": "tcp_data",
                                                                                 "connection_id": conn_id_for_reading,
@@ -1283,7 +1310,7 @@ impl P2PConnection {
                                                                                 log::error!("Failed to send TCP response over WebRTC: {}", e);
                                                                                 break;
                                                                             }
-                                                                            log::info!("✅ Host sent {} bytes back over WebRTC to client (connection {})", n, conn_id_for_reading);
+                                                                            log::debug!("Host sent {} bytes to client (connection {})", n, conn_id_for_reading);
                                                                         }
                                                                         Err(e) => {
                                                                             log::error!("Failed to read from TCP connection: {}", e);
@@ -1310,7 +1337,7 @@ impl P2PConnection {
                                                         drop(writer);
                                                         connections.remove(&connection_key);
                                                     } else {
-                                                        log::info!("✅ Host forwarded {} bytes to real server at localhost:{}", tcp_data.len(), target_port);
+                                                        log::debug!("Host forwarded {} bytes to server at localhost:{}", tcp_data.len(), target_port);
                                                     }
                                                 }
                                             }
@@ -1453,17 +1480,16 @@ impl P2PConnection {
         let app_handle_state = self.app_handle.clone();
         let session_id_state = self.session_id.clone();
         let grid_id_state = self.grid_id.clone();
+        let peer_user_id_state = self.peer_user_id.clone();
         let state = self.state.clone();
         peer_connection.on_peer_connection_state_change(Box::new(
             move |s: RTCPeerConnectionState| {
                 let app_handle = app_handle_state.clone();
                 let session_id = session_id_state.clone();
                 let grid_id = grid_id_state.clone();
+                let peer_user_id = peer_user_id_state.clone();
                 let state = state.clone();
-                // Note: peer_user_id needs to be available for SessionStateEvent
-                // Since it's not provided in the closure, we will pass an empty string
-                // and rely on other session identifiers.
-                let peer_user_id_for_event = "".to_string();
+                let peer_user_id_for_event = peer_user_id.clone();
 
                 Box::pin(async move {
                     log::info!(
@@ -1488,20 +1514,22 @@ impl P2PConnection {
                         }
                         RTCPeerConnectionState::Disconnected => {
                             log::warn!("P2P connection disconnected for grid: {}", grid_id);
-                            // Emit host disconnected event for UI
+                            // Emit host disconnected event for UI and auto-reconnection
                             app_handle.emit("host_disconnected", &serde_json::json!({
                                 "grid_id": grid_id,
                                 "session_id": session_id,
+                                "host_user_id": peer_user_id,
                                 "reason": "peer_disconnected"
                             })).ok();
                             SessionState::Disconnected
                         }
                         RTCPeerConnectionState::Failed => {
                             log::error!("P2P connection failed for grid: {}", grid_id);
-                            // Emit host disconnected event with failure reason
+                            // Emit host disconnected event with failure reason for UI and auto-reconnection
                             app_handle.emit("host_disconnected", &serde_json::json!({
                                 "grid_id": grid_id,
                                 "session_id": session_id,
+                                "host_user_id": peer_user_id,
                                 "reason": "connection_failed"
                             })).ok();
                             SessionState::Failed
@@ -1653,7 +1681,7 @@ impl P2PConnection {
                                                 if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
                                                     use base64::{Engine as _, engine::general_purpose};
                                                     if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
-                                                        log::info!("📥 Client received {} bytes from server for connection {} over P2P", tcp_data.len(), connection_id);
+                                                        log::debug!("Client received {} bytes from server for connection {}", tcp_data.len(), connection_id);
 
                                                         // Forward to local TCP socket
                                                         let transports = active_transports.lock().await;
@@ -1663,19 +1691,19 @@ impl P2PConnection {
                                                             if let crate::transport::TransportInstance::Tcp(tcp_tunnel) = transport {
                                                                 match tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
                                                                     Ok(_) => {
-                                                                        log::info!("✅ Client wrote {} bytes to local Minecraft client", tcp_data.len());
+                                                                        log::debug!("Client wrote {} bytes to local client", tcp_data.len());
                                                                         wrote_data = true;
                                                                         break;
                                                                     }
                                                                     Err(e) => {
-                                                                        log::error!("❌ Failed to write to TCP connection: {}", e);
+                                                                        log::error!("Failed to write to TCP connection: {}", e);
                                                                     }
                                                                 }
                                                             }
                                                         }
 
                                                         if !wrote_data {
-                                                            log::warn!("❌ Could not find TCP connection {} to write {} bytes (checked {} transports)", connection_id, tcp_data.len(), transports.len());
+                                                            log::warn!("Could not find TCP connection {} to write {} bytes (checked {} transports)", connection_id, tcp_data.len(), transports.len());
                                                         }
                                                     }
                                                 }

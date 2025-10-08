@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Mic, MicOff, Volume2, Settings, Users, X, Minimize2, Phone, PhoneOff } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core'; // Add this import
+import { invoke } from '@tauri-apps/api/core';
 import { useChannels } from '../../hooks/useChannels';
 import { useP2P } from '../../context/P2PProvider';
-import { useWebRTCMedia } from '../../hooks/useWebRTCMedia';
 import { useMediaStreams } from '../../hooks/useMediaStreams';
+import { useRustAudioStream } from '../../hooks/useRustAudioStream';
+import { useVoiceWebRTC } from '../../hooks/useVoiceWebRTC';
 import MediaControls from '../media/MediaControls';
 import { AudioErrorBoundary } from '../media/AudioErrorBoundary';
 
@@ -43,62 +44,94 @@ export default function VoiceChannelWindow({
   // Hooks
   const { getChannelById } = useChannels(gridId);
   useP2P(); // Used for P2P context setup
-  const { 
-    mediaState, 
+  const {
+    mediaState,
     backendAvailable,
-    startAudio, 
-    stopAudio, 
-    toggleAudioMute, 
+    startAudio,
+    stopAudio,
+    toggleAudioMute,
     getAudioLevel,
     audioSettings,
     saveAudioSettings
   } = useMediaStreams();
-  
+
   // Get channel info
   const channel = getChannelById(channelId);
-  
-  const { 
-    mediaSession, 
-    remoteParticipants, 
-    mediaConnected,
-    hasLocalAudio,
-    addLocalTrack,
-    removeLocalTrack,
-    setTrackEnabled
-  } = useWebRTCMedia(sessionId || undefined);
+
+  // Hybrid approach: Get MediaStream from Rust audio chunks
+  const { audioStream: rustAudioStream, isActive: rustAudioActive } = useRustAudioStream(sessionId);
+
+  // Browser WebRTC for voice channels (uses rustAudioStream)
+  const { peerConnections, connectToParticipant } = useVoiceWebRTC({
+    channelId,
+    gridId,
+    localAudioStream: rustAudioStream
+  });
 
   // Join voice channel
   const handleJoinChannel = useCallback(async () => {
     if (isConnecting || isConnected) return;
-    
+
     setIsConnecting(true);
-    
+
     try {
-      // Use the actual channel ID for the session, not a generated one
-      const voiceSessionId = channelId; // Use real channel ID
-      console.log('Joining voice channel with channel ID:', channelId, 'in grid:', gridId);
-      
-      // Create a modified initializeMediaSession that passes gridId
-      await invoke("create_media_session", { 
-        sessionId: voiceSessionId,
-        sessionType: "voice_channel",
+      console.log('Joining voice channel:', channelId, 'in grid:', gridId);
+
+      // Call the backend to join the voice channel (creates media session + registers with backend)
+      const joinResponse = await invoke<{
+        session_id: string;
+        participants: Array<{
+          user_id: string;
+          display_name?: string;
+          username?: string;
+          peer_connection_id?: string;
+          is_muted: boolean;
+          is_deafened: boolean;
+        }>;
+        routing_info: {
+          session_type: string;
+          required_connections?: string[];
+          max_participants: number;
+        };
+      }>("join_voice_channel", {
         channelId: channelId,
-        gridId: gridId
+        gridId: gridId,
+        audioQuality: "medium",
+        startMuted: false,
+        startDeafened: false
       });
-      console.log('Media session initialized');
-      
-      // Set session ID after successful initialization
-      setSessionId(voiceSessionId);
-      
+
+      console.log('Voice channel join response:', joinResponse);
+
+      // Set session ID from response
+      setSessionId(joinResponse.session_id);
+
       // Small delay to ensure the session is fully initialized
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Start audio after session is ready
-      const audioStream = await startAudio();
-      console.log('Audio started:', !!audioStream);
-      
+
+      // Start Rust audio capture
+      await startAudio();
+      console.log('Rust audio capture started');
+
+      // Connect to other participants via browser WebRTC
+      if (joinResponse.participants.length > 0) {
+        console.log(`Connecting to ${joinResponse.participants.length} participants via WebRTC`);
+
+        // Give a moment for rustAudioStream to initialize
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Connect to each participant
+        for (const participant of joinResponse.participants) {
+          console.log(`Initiating WebRTC connection to ${participant.user_id}`);
+          await connectToParticipant(
+            participant.user_id,
+            participant.display_name || participant.username || 'Unknown'
+          );
+        }
+      }
+
       setIsConnected(true);
-      console.log('Voice channel joined successfully');
+      console.log('Voice channel joined successfully - hybrid audio active');
     } catch (error) {
       console.error('Failed to join voice channel:', error);
       // Reset session ID if join failed
@@ -106,32 +139,36 @@ export default function VoiceChannelWindow({
     } finally {
       setIsConnecting(false);
     }
-  }, [channelId, gridId, isConnecting, isConnected, startAudio]);
+  }, [channelId, gridId, isConnecting, isConnected, startAudio, connectToParticipant]);
 
   // Leave voice channel
   const handleLeaveChannel = useCallback(async () => {
     if (!isConnected) return;
-    
+
     try {
-      if (hasLocalAudio) {
-        await removeLocalTrack('audio');
-      }
+      console.log('Leaving voice channel:', channelId);
+
+      // Stop Rust audio capture
       stopAudio();
-      
+
+      // Call backend to leave the voice channel
+      await invoke("leave_voice_channel", {
+        channelId: channelId,
+        gridId: gridId
+      });
+
       setIsConnected(false);
       setSessionId(null);
+      console.log('Successfully left voice channel');
     } catch (error) {
       console.error('Failed to leave voice channel:', error);
     }
-  }, [isConnected, hasLocalAudio, removeLocalTrack, stopAudio]);
+  }, [isConnected, channelId, gridId, stopAudio]);
 
   // Handle mute toggle
   const handleMuteToggle = useCallback(async () => {
     toggleAudioMute();
-    if (hasLocalAudio) {
-      await setTrackEnabled('audio', mediaState.audio.muted);
-    }
-  }, [toggleAudioMute, hasLocalAudio, setTrackEnabled, mediaState.audio.muted]);
+  }, [toggleAudioMute]);
 
   // Handle volume change
   const handleVolumeChange = useCallback(async (volume: number) => {
@@ -141,30 +178,42 @@ export default function VoiceChannelWindow({
 
   // Build participants list
   useEffect(() => {
+    // Debug log for speaking state
+    if (mediaState.audio.speaking) {
+      console.log('[VoiceChannel] Local user speaking:', {
+        audioLevel: mediaState.audio.level,
+        speaking: mediaState.audio.speaking,
+        audioEnabled: mediaState.audio.enabled,
+        muted: mediaState.audio.muted
+      });
+    }
+
     const localParticipant: VoiceParticipant = {
       userId: 'local',
       displayName: 'You',
       isLocal: true,
       audioEnabled: mediaState.audio.enabled,
       isMuted: mediaState.audio.muted,
-      isSpeaking: mediaState.audio.enabled && getAudioLevel().speaking,
+      isSpeaking: mediaState.audio.speaking,
       audioLevel: mediaState.audio.level,
-      connectionState: mediaConnected ? 'connected' : 'connecting'
+      connectionState: rustAudioActive ? 'connected' : 'connecting'
     };
 
-    const remoteParticipantList: VoiceParticipant[] = remoteParticipants.map(remote => ({
-      userId: remote.userId,
-      displayName: remote.displayName || remote.userId,
+    // Create participant list from WebRTC peer connections
+    const remoteParticipantList: VoiceParticipant[] = peerConnections.map(peer => ({
+      userId: peer.userId,
+      displayName: peer.username || `User ${peer.userId.slice(0, 8)}`,
       isLocal: false,
-      audioEnabled: remote.audio.enabled,
+      audioEnabled: true, // Assume enabled if connected
       isMuted: false,
-      isSpeaking: remote.audio.speaking,
-      audioLevel: remote.audio.volume || 0,
-      connectionState: 'connected'
+      isSpeaking: false, // TODO: Implement speaking detection for remote participants
+      audioLevel: 0,
+      connectionState: peer.connection.connectionState === 'connected' ? 'connected' :
+                       peer.connection.connectionState === 'failed' ? 'disconnected' : 'connecting'
     }));
 
     setParticipants([localParticipant, ...remoteParticipantList]);
-  }, [mediaState, remoteParticipants, mediaConnected, getAudioLevel]);
+  }, [mediaState.audio.enabled, mediaState.audio.muted, mediaState.audio.speaking, mediaState.audio.level, peerConnections, rustAudioActive]);
 
   // Don't auto-join - let user explicitly click join button
   // This prevents premature P2P session initialization
@@ -173,25 +222,6 @@ export default function VoiceChannelWindow({
   //     handleJoinChannel();
   //   }
   // }, [channel, isConnected, isConnecting, handleJoinChannel]);
-
-  // Handle adding audio track when mediaSession becomes available
-  useEffect(() => {
-    const addAudioIfReady = async () => {
-      if (mediaSession && mediaState.audio.enabled && mediaState.audio.stream && !hasLocalAudio) {
-        try {
-          const audioTrack = mediaState.audio.stream.getAudioTracks()[0];
-          if (audioTrack) {
-            console.log('Adding audio track to existing session');
-            await addLocalTrack(audioTrack, mediaState.audio.stream, 'audio');
-          }
-        } catch (error) {
-          console.error('Failed to add audio track to session:', error);
-        }
-      }
-    };
-
-    addAudioIfReady();
-  }, [mediaSession, mediaState.audio.enabled, mediaState.audio.stream, hasLocalAudio, addLocalTrack]);
 
   if (!channel) {
     return (

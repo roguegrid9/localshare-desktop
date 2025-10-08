@@ -138,9 +138,9 @@ pub async fn join_voice_channel(
     state: State<'_, AppState>,
 ) -> Result<VoiceJoinResponse, String> {
     log::info!("Joining voice channel: {} in grid: {}", channel_id, grid_id);
-    
-    let session_id = format!("voice_{}", channel_id);
-    
+
+    let session_id = channel_id.clone(); // Use channel ID as session ID
+
     let media_manager = {
         let media_guard = state.media_manager.lock().await;
         media_guard
@@ -153,19 +153,39 @@ pub async fn join_voice_channel(
         log::debug!("Media session already exists for {}", session_id);
     }
 
-    // TODO: Call backend API to join voice channel
-    // let messaging_service = get_messaging_service(&state).await?;
-    // let join_response = messaging_service.join_voice_channel(&grid_id, &channel_id, ...).await?;
-    
-    // For now, return basic response
-    Ok(VoiceJoinResponse {
-        session_id: session_id.clone(),
-        participants: vec![],
-        routing_info: VoiceRoutingInfo {
+    // Get user session for API call
+    let user_session = crate::auth::get_user_session().await
+        .map_err(|e| format!("Failed to get user session: {}", e))?
+        .ok_or("No active user session")?;
+
+    // Call backend API to join voice channel
+    let coordinator = crate::api::CoordinatorClient::new();
+    let response = coordinator.join_voice_channel(&user_session.token, &grid_id, &channel_id).await
+        .map_err(|e| format!("Failed to join voice channel: {}", e))?;
+
+    log::info!("Successfully joined voice channel: {:?}", response);
+
+    // Parse the response to extract participants and routing info
+    let other_participants: Vec<crate::api::types::VoiceParticipant> = response
+        .get("other_participants")
+        .and_then(|p| serde_json::from_value(p.clone()).ok())
+        .unwrap_or_else(Vec::new);
+
+    let routing_info = response
+        .get("routing_info")
+        .and_then(|r| serde_json::from_value(r.clone()).ok())
+        .unwrap_or_else(|| VoiceRoutingInfo {
             session_type: "mesh".to_string(),
             required_connections: Some(vec![]),
             max_participants: 8,
-        },
+        });
+
+    log::info!("Found {} other participants in voice channel", other_participants.len());
+
+    Ok(VoiceJoinResponse {
+        session_id: session_id.clone(),
+        participants: other_participants,
+        routing_info,
     })
 }
 
@@ -176,9 +196,19 @@ pub async fn leave_voice_channel(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Leaving voice channel: {} in grid: {}", channel_id, grid_id);
-    
-    let session_id = format!("voice_{}", channel_id);
-    
+
+    // Get user session for API call
+    let user_session = crate::auth::get_user_session().await
+        .map_err(|e| format!("Failed to get user session: {}", e))?
+        .ok_or("No active user session")?;
+
+    // Call backend API to leave voice channel
+    let coordinator = crate::api::CoordinatorClient::new();
+    coordinator.leave_voice_channel(&user_session.token, &grid_id, &channel_id).await
+        .map_err(|e| format!("Failed to leave voice channel: {}", e))?;
+
+    // Close media session
+    let session_id = channel_id.clone();
     let media_manager = {
         let media_guard = state.media_manager.lock().await;
         media_guard
@@ -189,7 +219,10 @@ pub async fn leave_voice_channel(
     media_manager
         .close_media_session(session_id)
         .await
-        .map_err(|e| format!("Failed to leave voice channel: {}", e))
+        .map_err(|e| format!("Failed to close media session: {}", e))?;
+
+    log::info!("Successfully left voice channel");
+    Ok(())
 }
 
 #[tauri::command]

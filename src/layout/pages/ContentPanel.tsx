@@ -55,17 +55,28 @@ export default function ContentPanel({
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [createChannelModalOpen, setCreateChannelModalOpen] = useState(false);
-  
+  const [gridUpdateTrigger, setGridUpdateTrigger] = useState(0);
+
   // State for process discovery
   const [showDiscoveryPanel, setShowDiscoveryPanel] = useState(false);
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [selectedDiscoveredProcess, setSelectedDiscoveredProcess] = useState<DetectedProcess | null>(null);
-  
+
   // State for process configuration modal
   const [showProcessConfigModal, setShowProcessConfigModal] = useState(false);
   const [processToConfig, setProcessToConfig] = useState<DetectedProcess | null>(null);
-  
+
   const commands = useTauriCommands();
+
+  // Listen for grid updates to refresh the displayed grid name
+  useEffect(() => {
+    const handleGridUpdated = () => {
+      console.log('ContentPanel: Grid updated, triggering re-render');
+      setGridUpdateTrigger(prev => prev + 1);
+    };
+    window.addEventListener('grid-updated', handleGridUpdated);
+    return () => window.removeEventListener('grid-updated', handleGridUpdated);
+  }, []);
   
   const actualGridId = selectedGridId;
   

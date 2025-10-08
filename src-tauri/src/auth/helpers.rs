@@ -4,7 +4,8 @@ use crate::api::{
     CoordinatorClient,
     UserSessionResult,
     CheckUsernameAvailabilityResponse,
-    PromotionResponse
+    PromotionResponse,
+    CurrentUserResponse
 };
 use crate::auth::storage::{store_user_session, AccountType};
 
@@ -107,6 +108,38 @@ pub async fn check_username_availability(username: String) -> Result<CheckUserna
             })
         }
     }
+}
+
+/// Update user display name
+pub async fn update_user_display_name(new_display_name: String) -> Result<()> {
+    // Get current session
+    let session = get_user_session().await?
+        .ok_or_else(|| anyhow::anyhow!("No active user session"))?;
+
+    // Validate display name
+    if new_display_name.trim().is_empty() || new_display_name.len() > 50 {
+        bail!("Display name must be 1-50 characters long");
+    }
+
+    // Update on server
+    let coordinator = CoordinatorClient::new();
+    coordinator.update_display_name(&session.token, new_display_name.clone()).await
+        .context("Failed to update display name on server")?;
+
+    log::info!("Display name successfully updated");
+    Ok(())
+}
+
+/// Get current user information from server
+pub async fn get_current_user_info() -> Result<CurrentUserResponse> {
+    // Get current session
+    let session = get_user_session().await?
+        .ok_or_else(|| anyhow::anyhow!("No active user session"))?;
+
+    // Fetch from server
+    let coordinator = CoordinatorClient::new();
+    coordinator.get_current_user(&session.token).await
+        .context("Failed to get current user info from server")
 }
 
 /// Promote account with optional username

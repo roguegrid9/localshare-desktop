@@ -86,6 +86,14 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
 
   // Sync backend state with mediaState
   useEffect(() => {
+    // Debug logging for speaking state
+    if (backendAudioLevel.speaking) {
+      console.log('[Speaking Detected]', {
+        level: backendAudioLevel.level,
+        speaking: backendAudioLevel.speaking
+      });
+    }
+
     setMediaState(prev => ({
       ...prev,
       backendAvailable: audioStatus.available,
@@ -453,7 +461,6 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
     
     // Settings
     setQualityPreset,
-    audioSettings,
     saveAudioSettings,
     loadAudioSettings,
     

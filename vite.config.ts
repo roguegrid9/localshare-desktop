@@ -8,5 +8,14 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src')
     }
+  },
+  server: {
+    watch: {
+      ignored: [
+        '**/src-tauri/target/**',
+        '**/node_modules/**',
+        '**/.git/**'
+      ]
+    }
   }
 })

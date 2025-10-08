@@ -4,9 +4,9 @@ import { cx } from "../../utils/cx";
 import { useState, useRef, useEffect } from "react";
 import CreateGridModal from "./CreateGridModal";
 import JoinGridModal from "./JoinGridModal";
+import UserSettings from "./UserSettings";
 import { useGrids } from "../../hooks/useGrids";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
-import { BandwidthDisplay, PurchaseBandwidthModal } from "../../components/relay";
 import { invoke } from "@tauri-apps/api/core";
 import { supabase } from "../../utils/supabase";
 
@@ -32,8 +32,8 @@ export default function GridsRail({
   const [openCreate, setOpenCreate] = useState(false);
   const [openJoin, setOpenJoin] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showRelayModal, setShowRelayModal] = useState(false);
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [showUserSettings, setShowUserSettings] = useState(false);
+  // const [showRelayModal, setShowRelayModal] = useState(false); // Commented out - Coming Soon
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const { refreshGrids } = useGrids();
@@ -73,7 +73,9 @@ export default function GridsRail({
     console.log(`Profile action: ${action}`);
     setShowProfileMenu(false);
 
-    if (action === 'logout') {
+    if (action === 'profile') {
+      setShowUserSettings(true);
+    } else if (action === 'logout') {
       try {
         // Sign out from Supabase first
         console.log('Signing out from Supabase...');
@@ -93,12 +95,23 @@ export default function GridsRail({
   };
 
   function getNetworkStatusTitle(status: NetworkStatus | null): string {
-    if (!status) return "Network Status Unknown";
-    
+    if (!status) return "Checking Connection...";
+
     const quality = status.connection_quality;
     const needsRelay = status.needs_relay;
-    
-    return `NAT: ${status.nat_type} | Quality: ${quality}${needsRelay ? " (Needs Relay)" : ""}`;
+
+    // User-friendly status messages
+    if (quality === "excellent" && !needsRelay) {
+      return "Excellent Connection";
+    } else if (quality === "good") {
+      return "Good Connection";
+    } else if (needsRelay) {
+      return "Limited Connection";
+    } else if (quality === "fair") {
+      return "Fair Connection";
+    } else {
+      return "Connection Issues";
+    }
   }
 
   return (
@@ -171,6 +184,7 @@ export default function GridsRail({
         {/* Docker status removed - ready for AI capsules */}
 
         {/* Network Status Button */}
+        {/* TODO: Update messaging after relay implementation - remove beta disclaimer and add relay server status */}
         <button
           className={cx(
             "h-9 w-9 grid place-items-center rounded-xl hover:bg-white/20 transition-colors group relative",
@@ -197,31 +211,43 @@ export default function GridsRail({
             "bg-red-500"
           )} />
 
-          <div className="absolute left-full ml-2 px-2 py-1 bg-[#111319] text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 max-w-xs">
-            <div className="font-medium">{networkStatus?.nat_type || "Checking..."}</div>
-            {networkStatus && (
-              <div className="text-white/60 text-xs mt-1">
-                {networkStatus.needs_relay ? "Requires TURN relay" : "Direct P2P possible"}
-              </div>
-            )}
-            {networkLoading && (
-              <div className="text-blue-400 text-xs">Testing connectivity...</div>
+          <div className="absolute left-full ml-2 px-3 py-2 bg-[#111319] text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal z-50 max-w-xs">
+            {networkLoading ? (
+              <div className="text-blue-400">Testing connectivity...</div>
+            ) : networkStatus ? (
+              <>
+                <div className="font-semibold mb-1">{getNetworkStatusTitle(networkStatus)}</div>
+                <div className="text-white/70 mb-2 leading-relaxed">
+                  {networkStatus.connection_quality === "excellent" && !networkStatus.needs_relay ?
+                    "Direct connection to other users with the best speed and lowest latency." :
+                  networkStatus.connection_quality === "good" ?
+                    "Good connection quality for real-time communication." :
+                  networkStatus.needs_relay ?
+                    "Your network requires relay servers to connect. Relays aren't implemented yet in this beta, but direct connections still work!" : // TODO: Update after relay implementation
+                    "Connection quality may impact performance."}
+                </div>
+                <div className="text-white/40 text-[10px] border-t border-white/10 pt-1.5 mt-1.5">
+                  Technical: {networkStatus.nat_type}{networkStatus.needs_relay ? " • Needs relay" : " • Direct P2P"}
+                </div>
+              </>
+            ) : (
+              <div>Checking connection status...</div>
             )}
           </div>
         </button>
 
-        {/* Relay & Bandwidth Button */}
-        <button
-          className="h-9 w-9 grid place-items-center rounded-xl bg-white/10 hover:bg-white/20 transition-colors group"
-          title="Relay & Bandwidth"
-          onClick={() => setShowRelayModal(true)}
+        {/* Relay & Bandwidth Button - Coming Soon */}
+        {/* <button
+          className="h-9 w-9 grid place-items-center rounded-xl bg-white/10 opacity-50 cursor-not-allowed transition-colors group"
+          title="Relay & Bandwidth (Coming Soon)"
+          disabled
         >
           <Server className="h-4 w-4" />
 
           <div className="absolute left-full ml-2 px-2 py-1 bg-[#111319] text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-            Relay & Bandwidth
+            Relay & Bandwidth (Coming Soon)
           </div>
-        </button>
+        </button> */}
 
         {/* Profile with Dropdown Menu */}
         <div className="relative" ref={profileMenuRef}>
@@ -254,18 +280,10 @@ export default function GridsRail({
                   onClick={() => handleProfileMenuClick('profile')}
                   className="flex items-center gap-3 w-full px-3 py-2 text-sm text-white/80 hover:bg-white/10 rounded-lg transition-colors"
                 >
-                  <UserCog className="h-4 w-4" />
-                  Profile Settings
-                </button>
-                
-                <button
-                  onClick={() => handleProfileMenuClick('settings')}
-                  className="flex items-center gap-3 w-full px-3 py-2 text-sm text-white/80 hover:bg-white/10 rounded-lg transition-colors"
-                >
                   <Settings className="h-4 w-4" />
-                  App Settings
+                  Settings
                 </button>
-                
+
                 <div className="h-px bg-white/10 my-1" />
                 
                 <button
@@ -297,18 +315,18 @@ export default function GridsRail({
         />
       )}
 
-      {/* Relay & Bandwidth Modal */}
-      {showRelayModal && (
+      {/* Relay & Bandwidth Modal - Coming Soon */}
+      {/* {showRelayModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowRelayModal(false)}>
           <div className="bg-[#111319] border border-white/10 rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                  <Server className="w-5 h-5 text-blue-400" />
+                <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                  <Server className="w-5 h-5 text-yellow-400" />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-white">Relay & Bandwidth</h2>
-                  <p className="text-sm text-white/60">Manage your relay bandwidth allocation</p>
+                  <p className="text-sm text-white/60">Coming Soon</p>
                 </div>
               </div>
               <button
@@ -321,53 +339,41 @@ export default function GridsRail({
               </button>
             </div>
 
-            {selectedId ? (
-              <div className="space-y-6">
-                {/* Bandwidth Display */}
-                <div>
-                  <h3 className="text-sm font-medium text-white/80 mb-3">Current Usage</h3>
-                  <BandwidthDisplay gridId={selectedId} />
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-6">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                  <Server className="w-5 h-5 text-yellow-400" />
                 </div>
-
-                {/* Purchase Section */}
                 <div>
-                  <h3 className="text-sm font-medium text-white/80 mb-3">Purchase Additional Bandwidth</h3>
-                  <button
-                    onClick={() => setShowPurchaseModal(true)}
-                    className="w-full rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-                  >
-                    Purchase Bandwidth
-                  </button>
-                </div>
-
-                {/* Info Section */}
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
-                  <p className="text-sm text-blue-200/80">
-                    💡 Bandwidth is shared across all members of your grid. Purchase more when you need additional relay capacity for connections.
+                  <h3 className="font-semibold text-yellow-300 mb-2">Feature Under Development</h3>
+                  <p className="text-sm text-yellow-200/80 mb-4">
+                    Relay servers and bandwidth management features are currently being built.
+                    All connections currently use direct peer-to-peer networking.
                   </p>
+                  <div className="space-y-2 text-sm text-yellow-200/70">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Relay server fallback for restricted networks</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Bandwidth usage tracking and quotas</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Bandwidth purchase and management</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <Server className="w-12 h-12 mx-auto mb-3 text-white/20" />
-                <p className="text-white/60">Select a grid to view bandwidth stats</p>
-              </div>
-            )}
+            </div>
           </div>
         </div>
-      )}
+      )} */}
 
-      {/* Purchase Bandwidth Modal */}
-      {showPurchaseModal && selectedId && (
-        <PurchaseBandwidthModal
-          gridId={selectedId}
-          isOpen={showPurchaseModal}
-          onClose={() => setShowPurchaseModal(false)}
-          onSuccess={() => {
-            setShowPurchaseModal(false);
-            // Optionally refresh bandwidth display
-          }}
-        />
+      {/* User Settings Modal */}
+      {showUserSettings && (
+        <UserSettings onClose={() => setShowUserSettings(false)} />
       )}
     </aside>
   );

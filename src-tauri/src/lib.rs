@@ -116,11 +116,12 @@ pub fn run() {
             log::info!("RogueGrid9 client starting up");
             log::info!("Coordinator URL: https://api.roguegrid9.com");
 
-            // Open DevTools for debugging
-            if let Some(window) = app.get_webview_window("main") {
-                window.open_devtools();
-                log::info!("DevTools opened");
-            }
+            // DevTools can be opened with F12 or Ctrl+Shift+I
+            // Commented out auto-open for production-like experience
+            // if let Some(window) = app.get_webview_window("main") {
+            //     window.open_devtools();
+            //     log::info!("DevTools opened");
+            // }
 
             // Initialize storage on app start
             auth::initialize_storage();
@@ -281,6 +282,8 @@ pub fn run() {
             check_connection_status,
             validate_token,
             update_username,
+            update_display_name,
+            get_current_user,
             check_username_availability,
             promote_account_with_username,
             get_auth_token,
@@ -381,15 +384,17 @@ pub fn run() {
             get_grids_state,
             get_grid_processes,
             get_grid_channels,
-            delete_grid_process,        
-            delete_grid_channel,  
-            update_member_role,  
+            delete_grid_process,
+            delete_grid_channel,
+            update_member_role,
+            update_grid_basic_info,
 
             // ============================================================================
             // WEBSOCKET COMMANDS
             // ============================================================================
             connect_websocket,
             disconnect_websocket,
+            send_voice_webrtc_signal,
             is_websocket_connected,
 
             // ============================================================================

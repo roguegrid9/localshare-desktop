@@ -205,7 +205,7 @@ export function useGrids() {
         // Listen for member status changes to update online status
         const unsubMemberStatusChanged = await listen('member_status_changed', (event: any) => {
           const { grid_id, user_id, is_online } = event.payload;
-          
+
           setAllGrids(prev => prev.map(grid => {
             if (grid.id === grid_id) {
               // Update status based on any online members
@@ -228,6 +228,13 @@ export function useGrids() {
       }
     };
 
+    // Listen for grid-updated DOM event (from GridManagement)
+    const handleGridUpdated = () => {
+      console.log("Grid updated event received, refreshing grids...");
+      refreshGrids();
+    };
+    window.addEventListener('grid-updated', handleGridUpdated);
+
     let cleanup: (() => void) | undefined;
     setupListeners().then(fn => {
       cleanup = fn;
@@ -235,6 +242,7 @@ export function useGrids() {
 
     return () => {
       cleanup?.();
+      window.removeEventListener('grid-updated', handleGridUpdated);
     };
   }, [refreshGrids]);
 

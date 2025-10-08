@@ -27,6 +27,16 @@ pub struct GridSessionStatus {
     pub host_username: Option<String>,
 }
 
+// Reconnection state tracking
+#[derive(Debug, Clone)]
+struct ReconnectionState {
+    grid_id: String,
+    host_user_id: String,
+    retry_count: u32,
+    max_retries: u32,
+    is_reconnecting: bool,
+}
+
 #[derive(Clone)]
 pub struct P2PManager {
     app_handle: AppHandle,
@@ -36,6 +46,7 @@ pub struct P2PManager {
     websocket_manager: Arc<Mutex<WebSocketManager>>, // Add this field here
     // Add this new field:
     process_data_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<(String, Vec<u8>)>>>>,
+    reconnection_states: Arc<Mutex<HashMap<String, ReconnectionState>>>, // Track reconnection per grid
 }
 
 // Update the P2PManager::new() method:
@@ -48,9 +59,135 @@ impl P2PManager {
             api_client: Arc::new(CoordinatorClient::new()),
             websocket_manager: Arc::new(Mutex::new(WebSocketManager::new(app_handle.clone()))),
             process_data_receiver: Arc::new(Mutex::new(None)),
+            reconnection_states: Arc::new(Mutex::new(HashMap::new())),
         };
-        
-        manager 
+
+        // Set up auto-reconnection listener
+        manager.setup_reconnection_listener();
+
+        // Set up process event listeners for cleanup
+        manager.setup_process_cleanup_listeners();
+
+        manager
+    }
+
+    /// Set up event listener for auto-reconnection on disconnect
+    fn setup_reconnection_listener(&self) {
+        let manager_clone = self.clone();
+
+        self.app_handle.listen("host_disconnected", move |event| {
+            let manager = manager_clone.clone();
+
+            // Parse event payload
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                let grid_id = payload.get("grid_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let host_user_id = payload.get("host_user_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if !grid_id.is_empty() && !host_user_id.is_empty() {
+                    log::info!("Detected disconnect for grid {}, initiating auto-reconnection to host {}",
+                              grid_id, host_user_id);
+
+                    // Spawn async task to handle reconnection
+                    tokio::spawn(async move {
+                        if let Err(e) = manager.attempt_reconnection(grid_id.clone(), host_user_id).await {
+                            log::error!("Failed to start reconnection for grid {}: {}", grid_id, e);
+                        }
+                    });
+                } else {
+                    log::warn!("Cannot reconnect: missing grid_id or host_user_id in disconnect event");
+                }
+            }
+        });
+
+        log::info!("Auto-reconnection listener initialized");
+    }
+
+    /// Set up event listeners for process crashes/exits to clean up transports
+    fn setup_process_cleanup_listeners(&self) {
+        let manager_for_exit = self.clone();
+        let manager_for_stop = self.clone();
+
+        // Listen for process exit events (crash or normal exit)
+        self.app_handle.listen("process_exited", move |event| {
+            let manager = manager_for_exit.clone();
+
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                let grid_id = payload.get("grid_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let process_id = payload.get("process_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if !grid_id.is_empty() {
+                    log::info!("Process {} exited in grid {}, cleaning up transports", process_id, grid_id);
+
+                    tokio::spawn(async move {
+                        if let Err(e) = manager.cleanup_grid_transports(&grid_id).await {
+                            log::error!("Failed to clean up transports for grid {}: {}", grid_id, e);
+                        }
+                    });
+                }
+            }
+        });
+
+        // Listen for process stop events (manual stop)
+        self.app_handle.listen("process_stopped", move |event| {
+            let manager = manager_for_stop.clone();
+
+            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                let grid_id = payload.get("grid_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let process_id = payload.get("process_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if !grid_id.is_empty() {
+                    log::info!("Process {} stopped in grid {}, cleaning up transports", process_id, grid_id);
+
+                    tokio::spawn(async move {
+                        if let Err(e) = manager.cleanup_grid_transports(&grid_id).await {
+                            log::error!("Failed to clean up transports for grid {}: {}", grid_id, e);
+                        }
+                    });
+                }
+            }
+        });
+
+        log::info!("Process cleanup listeners initialized");
+    }
+
+    /// Clean up all transports for a grid (when process crashes/exits)
+    async fn cleanup_grid_transports(&self, grid_id: &str) -> Result<()> {
+        log::info!("Cleaning up transports for grid: {}", grid_id);
+
+        let connections = self.connections.lock().await;
+
+        // Find all connections for this grid
+        for (key, connection) in connections.iter() {
+            if key == grid_id || key.starts_with(&format!("{}:", grid_id)) {
+                log::info!("Stopping all transports for connection: {}", key);
+                if let Err(e) = connection.stop_all_transports().await {
+                    log::error!("Failed to stop transports for {}: {}", key, e);
+                }
+            }
+        }
+
+        Ok(())
     }
 
 
@@ -179,9 +316,9 @@ impl P2PManager {
         if let Some(pm) = pm_guard.as_ref() {
             pm.handle_p2p_data(grid_id, data).await?;
         } else {
-            return Err(anyhow::anyhow!("Process manager not available"));
+            return Err(anyhow::anyhow!("❌ Process manager is not initialized. Please restart the application."));
         }
-        
+
         Ok(())
     }
 
@@ -192,7 +329,7 @@ impl P2PManager {
         self.ensure_websocket_connected().await?;
         // Get WebSocket sender before creating connection
         if self.signal_sender.lock().await.is_none() {
-            return Err(anyhow::anyhow!("WebSocket not connected"));
+            return Err(anyhow::anyhow!("🔌 Connection to RogueGrid server lost. Please check your internet connection and try again."));
         }
 
         // Step 1: Check grid session status
@@ -204,7 +341,7 @@ impl P2PManager {
                 if let Some(host_id) = status.current_host_id {
                     self.connect_to_grid_host(grid_id, host_id).await
                 } else {
-                    Err(anyhow::anyhow!("Grid marked as hosted but no host found"))
+                    Err(anyhow::anyhow!("⚠️ Grid is marked as hosted but the host is not available. Please try reconnecting or start the grid yourself."))
                 }
             }
             "inactive" | "orphaned" => {
@@ -212,10 +349,10 @@ impl P2PManager {
                 self.claim_grid_host(grid_id).await
             }
             "restoring" => {
-                Err(anyhow::anyhow!("Grid is currently being restored, try again later"))
+                Err(anyhow::anyhow!("⏳ Grid is currently being restored from a previous session. Please wait a moment and try again."))
             }
             _ => {
-                Err(anyhow::anyhow!("Unknown grid session state: {}", status.session_state))
+                Err(anyhow::anyhow!("❌ Grid is in an unexpected state ({}). Please contact support if this persists.", status.session_state))
             }
         }
     }
@@ -325,6 +462,157 @@ impl P2PManager {
             return Err(anyhow::anyhow!("WebSocket not connected"));
         }
 
+        Ok(())
+    }
+
+    // Auto-reconnection logic with exponential backoff
+    async fn attempt_reconnection(&self, grid_id: String, host_user_id: String) -> Result<()> {
+        const MAX_RETRIES: u32 = 5;
+
+        // Check if already reconnecting and initialize state atomically
+        let should_start_reconnection = {
+            let mut reconnection_states = self.reconnection_states.lock().await;
+
+            // Check if already reconnecting
+            if let Some(state) = reconnection_states.get(&grid_id) {
+                if state.is_reconnecting {
+                    log::info!("Already attempting reconnection for grid {}", grid_id);
+                    return Ok(());
+                }
+            }
+
+            // Initialize reconnection state in the same critical section
+            reconnection_states.insert(
+                grid_id.clone(),
+                ReconnectionState {
+                    grid_id: grid_id.clone(),
+                    host_user_id: host_user_id.clone(),
+                    retry_count: 0,
+                    max_retries: MAX_RETRIES,
+                    is_reconnecting: true,
+                },
+            );
+
+            true
+        };
+
+        if !should_start_reconnection {
+            return Ok(());
+        }
+
+        // Clone for the background task
+        let manager = self.clone();
+        let grid_id_task = grid_id.clone();
+        let host_user_id_task = host_user_id.clone();
+
+        // Spawn reconnection task
+        tokio::spawn(async move {
+            let mut retry_count = 0;
+
+            while retry_count < MAX_RETRIES {
+                // Check if reconnection was cancelled (state removed)
+                {
+                    let reconnection_states = manager.reconnection_states.lock().await;
+                    if !reconnection_states.contains_key(&grid_id_task) {
+                        log::info!("Reconnection cancelled for grid {}", grid_id_task);
+                        return;
+                    }
+                }
+
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                let delay_secs = 2u64.pow(retry_count);
+
+                log::info!(
+                    "Reconnection attempt {}/{} for grid {} in {}s",
+                    retry_count + 1,
+                    MAX_RETRIES,
+                    grid_id_task,
+                    delay_secs
+                );
+
+                // Emit reconnection attempt event
+                manager.app_handle.emit("p2p_reconnecting", &serde_json::json!({
+                    "grid_id": grid_id_task,
+                    "attempt": retry_count + 1,
+                    "max_attempts": MAX_RETRIES,
+                    "delay_seconds": delay_secs
+                })).ok();
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+
+                // Check again after sleep (user might have cancelled during wait)
+                {
+                    let reconnection_states = manager.reconnection_states.lock().await;
+                    if !reconnection_states.contains_key(&grid_id_task) {
+                        log::info!("Reconnection cancelled for grid {} (during backoff)", grid_id_task);
+                        return;
+                    }
+                }
+
+                // Clean up old connection before reconnecting
+                {
+                    let mut connections = manager.connections.lock().await;
+                    connections.remove(&grid_id_task);
+                    // Also try specific key format
+                    connections.remove(&format!("{}:{}", grid_id_task, host_user_id_task));
+                }
+
+                // Attempt reconnection
+                match manager.connect_to_grid_host(grid_id_task.clone(), host_user_id_task.clone()).await {
+                    Ok(_) => {
+                        log::info!("Successfully reconnected to grid {}", grid_id_task);
+
+                        // Clear reconnection state
+                        {
+                            let mut reconnection_states = manager.reconnection_states.lock().await;
+                            reconnection_states.remove(&grid_id_task);
+                        }
+
+                        // Emit success event
+                        manager.app_handle.emit("p2p_reconnected", &serde_json::json!({
+                            "grid_id": grid_id_task,
+                            "attempt": retry_count + 1
+                        })).ok();
+
+                        return;
+                    }
+                    Err(e) => {
+                        log::warn!("Reconnection attempt {} failed for grid {}: {}", retry_count + 1, grid_id_task, e);
+                        retry_count += 1;
+                    }
+                }
+            }
+
+            // Max retries exceeded
+            log::error!("Failed to reconnect to grid {} after {} attempts", grid_id_task, MAX_RETRIES);
+
+            // Clear reconnection state
+            {
+                let mut reconnection_states = manager.reconnection_states.lock().await;
+                reconnection_states.remove(&grid_id_task);
+            }
+
+            // Emit failure event
+            manager.app_handle.emit("p2p_reconnection_failed", &serde_json::json!({
+                "grid_id": grid_id_task,
+                "max_attempts": MAX_RETRIES
+            })).ok();
+        });
+
+        Ok(())
+    }
+
+    /// Cancel ongoing reconnection attempt for a grid
+    pub async fn cancel_reconnection(&self, grid_id: &str) -> Result<()> {
+        let mut reconnection_states = self.reconnection_states.lock().await;
+        if reconnection_states.remove(grid_id).is_some() {
+            log::info!("Cancelled reconnection for grid {}", grid_id);
+
+            // Emit cancellation event
+            self.app_handle.emit("p2p_reconnection_cancelled", &serde_json::json!({
+                "grid_id": grid_id
+            })).ok();
+        }
         Ok(())
     }
 
@@ -778,7 +1066,7 @@ impl P2PManager {
     async fn get_auth_token(&self) -> Result<String> {
         let session = get_user_session().await?;
         let token = session
-            .ok_or_else(|| anyhow::anyhow!("No active session"))?
+            .ok_or_else(|| anyhow::anyhow!("🔐 You're not logged in. Please log in to continue."))?
             .token;
         Ok(token)
     }
@@ -786,7 +1074,7 @@ impl P2PManager {
     async fn get_current_user_id(&self) -> Result<String> {
         let state = get_user_state().await?;
         let user_id = state.user_id
-            .ok_or_else(|| anyhow::anyhow!("No current user ID"))?;
+            .ok_or_else(|| anyhow::anyhow!("🔐 User session is invalid. Please log out and log back in."))?;
         Ok(user_id)
     }
 
@@ -801,8 +1089,9 @@ impl P2PManager {
                 return connection.initialize_media_session().await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn add_media_track(&self, session_id: String, track_info: crate::commands::p2p::MediaTrackInfo) -> Result<()> {
@@ -823,8 +1112,9 @@ impl P2PManager {
                 return connection.add_media_track(connection_track_info).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn remove_media_track(&self, session_id: String, track_id: String) -> Result<()> {
@@ -837,8 +1127,9 @@ impl P2PManager {
                 return connection.remove_media_track(track_id).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn set_track_enabled(&self, session_id: String, track_id: String, enabled: bool) -> Result<()> {
@@ -851,8 +1142,9 @@ impl P2PManager {
                 return connection.set_track_enabled(track_id, enabled).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn replace_video_track(&self, session_id: String, old_track_id: String, new_track_id: String, stream_id: String) -> Result<()> {
@@ -865,8 +1157,9 @@ impl P2PManager {
                 return connection.replace_video_track(old_track_id, new_track_id, stream_id).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn get_media_stats(&self, session_id: String) -> Result<crate::commands::p2p::MediaStats> {
@@ -911,8 +1204,9 @@ impl P2PManager {
                 });
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn configure_media_quality(&self, session_id: String, quality_preset: String) -> Result<()> {
@@ -925,8 +1219,9 @@ impl P2PManager {
                 return connection.configure_media_quality(quality_preset).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn get_media_sessions(&self) -> Vec<String> {
@@ -964,8 +1259,9 @@ impl P2PManager {
                 return connection.send_data(message_bytes).await;
             }
         }
-        
-        Err(anyhow::anyhow!("Session not found: {}", session_id))
+
+
+        Err(anyhow::anyhow!("❌ Connection session not found. The P2P connection may have been closed. Please try reconnecting."))
     }
 
     pub async fn handle_media_signal(&self, session_id: String, signal_type: String, signal_data: serde_json::Value, from_user_id: String) -> Result<()> {
@@ -1015,7 +1311,7 @@ impl P2PManager {
 
         // Check if process is connectable
         if !response.get("is_connectable").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return Err(anyhow::anyhow!("Process is not connectable"));
+            return Err(anyhow::anyhow!("⚠️ This process is not available for connection. It may be stopped or not configured for sharing."));
         }
 
         let host_user_id = response
@@ -1121,6 +1417,23 @@ impl P2PManager {
             process_id,
             grid_id
         );
+
+        // Cancel any ongoing reconnection attempts
+        self.cancel_reconnection(&grid_id).await?;
+
+        // Remove P2P connection
+        {
+            let mut connections = self.connections.lock().await;
+            connections.remove(&grid_id);
+            // Also try to find and remove by prefix
+            let keys_to_remove: Vec<String> = connections.keys()
+                .filter(|k| k.starts_with(&format!("{}:", grid_id)))
+                .cloned()
+                .collect();
+            for key in keys_to_remove {
+                connections.remove(&key);
+            }
+        }
 
         // Call backend to disconnect
         let session = get_user_session().await?;

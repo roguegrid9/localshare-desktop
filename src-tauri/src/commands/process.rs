@@ -99,7 +99,21 @@ pub async fn stop_grid_process(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Tauri command: stop_grid_process called for grid: {}", grid_id);
-    
+
+    // Get the process_id before stopping (we need it to close tabs)
+    let process_id = {
+        let manager_state = state.process_manager.lock().await;
+        if let Some(manager) = manager_state.as_ref() {
+            // Try to find the process ID for this grid
+            let processes = manager.get_all_processes_including_terminals().await;
+            processes.iter()
+                .find(|p| p.grid_id == grid_id)
+                .map(|p| p.process_id.clone())
+        } else {
+            None
+        }
+    };
+
     // Stop the process first
     {
         let manager_state = state.process_manager.lock().await;
@@ -112,7 +126,7 @@ pub async fn stop_grid_process(
             return Err("Process manager not initialized".to_string());
         }
     }
-    
+
     // Then release grid host status
     {
         let p2p_state = state.p2p_manager.lock().await;
@@ -124,7 +138,27 @@ pub async fn stop_grid_process(
             }
         }
     }
-    
+
+    // Close all tabs associated with this process (non-blocking)
+    if let Some(pid) = process_id {
+        let window_manager_clone = state.window_manager.clone();
+        let pid_clone = pid.clone();
+        tokio::spawn(async move {
+            let window_manager = window_manager_clone.lock().await;
+            if let Some(manager) = window_manager.as_ref() {
+                match manager.close_tabs_by_process(&pid_clone).await {
+                    Ok(closed_tabs) => {
+                        log::info!("Closed {} tabs for stopped grid process {}", closed_tabs.len(), pid_clone);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to close tabs for process {}: {}", pid_clone, e);
+                    }
+                }
+            }
+        });
+    }
+
+    log::info!("stop_process command completing successfully");
     Ok(())
 }
 
@@ -156,16 +190,53 @@ pub async fn stop_process(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     log::info!("Tauri command: stop_process called for grid: {}", grid_id);
-    
+
+    // Get the process_id before stopping (we need it to close tabs)
+    let process_id = {
+        let manager_state = state.process_manager.lock().await;
+        if let Some(manager) = manager_state.as_ref() {
+            // Try to find the process ID for this grid
+            let processes = manager.get_all_processes_including_terminals().await;
+            processes.iter()
+                .find(|p| p.grid_id == grid_id)
+                .map(|p| p.process_id.clone())
+        } else {
+            None
+        }
+    };
+
+    // Stop the process
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         manager.stop_process(grid_id).await.map_err(|e| {
             log::error!("Failed to stop process: {}", e);
             e.to_string()
-        })
+        })?;
     } else {
-        Err("Process manager not initialized".to_string())
+        return Err("Process manager not initialized".to_string());
     }
+
+    // Close all tabs associated with this process (non-blocking)
+    if let Some(pid) = process_id {
+        let window_manager_clone = state.window_manager.clone();
+        let pid_clone = pid.clone();
+        tokio::spawn(async move {
+            let window_manager = window_manager_clone.lock().await;
+            if let Some(manager) = window_manager.as_ref() {
+                match manager.close_tabs_by_process(&pid_clone).await {
+                    Ok(closed_tabs) => {
+                        log::info!("Closed {} tabs for stopped process {}", closed_tabs.len(), pid_clone);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to close tabs for process {}: {}", pid_clone, e);
+                    }
+                }
+            }
+        });
+    }
+
+    log::info!("stop_grid_process command completing successfully");
+    Ok(())
 }
 
 // Get process status for a grid

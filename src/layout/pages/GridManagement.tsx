@@ -22,7 +22,6 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../components/ui/Toaster';
 import PermissionManager from '../../components/permissions/PermissionManager';
-import { BandwidthDisplay, PurchaseBandwidthModal, RelayModeSelector } from '../../components/relay';
 
 interface GridManagementProps {
   gridId: string;
@@ -121,8 +120,8 @@ interface ContainerInfo {
 interface DeleteConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
-  onForceConfirm?: () => void;
+  onConfirm: () => Promise<void>;
+  onForceConfirm?: () => Promise<void>;
   title: string;
   message: string;
   itemName: string;
@@ -139,22 +138,65 @@ interface RoleChangeModalProps {
   onRoleChange: (userId: string, newRole: string) => void;
 }
 
-function DeleteConfirmationModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
+function DeleteConfirmationModal({
+  isOpen,
+  onClose,
+  onConfirm,
   onForceConfirm,
-  title, 
-  message, 
-  itemName, 
-  type, 
+  title,
+  message,
+  itemName,
+  type,
   forceDelete = false,
   containerStatus
 }: DeleteConfirmationModalProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const toast = useToast();
+
   if (!isOpen) return null;
 
   const isContainer = type === 'container';
   // const isRunningContainer = isContainer && containerStatus?.toLowerCase() === 'running';
+
+  const handleConfirm = async () => {
+    if (isDeleting) {
+      console.log('⚠️ Already deleting, ignoring click');
+      return; // Prevent double-clicks
+    }
+    console.log('🚀 Modal handleConfirm started');
+    setIsDeleting(true);
+    try {
+      console.log('⏳ Awaiting onConfirm...');
+      await onConfirm();
+      console.log('✅ onConfirm completed successfully');
+      console.log('🚪 Closing modal...');
+      onClose(); // Close modal after successful deletion
+      console.log('✅ Modal closed');
+    } catch (error) {
+      console.error('❌ Deletion error in modal:', error);
+      toast(`Failed to delete: ${error}`, 'error');
+      console.log('🚪 Closing modal after error...');
+      onClose(); // Close modal even on error
+    } finally {
+      console.log('🔄 Setting isDeleting to false');
+      setIsDeleting(false);
+    }
+  };
+
+  const handleForceConfirm = async () => {
+    if (isDeleting || !onForceConfirm) return; // Prevent double-clicks
+    setIsDeleting(true);
+    try {
+      await onForceConfirm();
+      onClose(); // Close modal after successful deletion
+    } catch (error) {
+      console.error('Force deletion error in modal:', error);
+      toast(`Failed to force delete: ${error}`, 'error');
+      onClose(); // Close modal even on error
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -216,24 +258,27 @@ function DeleteConfirmationModal({
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm hover:border-white/20 hover:bg-white/5"
+            disabled={isDeleting}
+            className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm hover:border-white/20 hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
-          
+
           {forceDelete && onForceConfirm ? (
             <button
-              onClick={onForceConfirm}
-              className="flex-1 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-black hover:bg-yellow-600"
+              onClick={handleForceConfirm}
+              disabled={isDeleting}
+              className="flex-1 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-black hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Force Delete
+              {isDeleting ? 'Deleting...' : 'Force Delete'}
             </button>
           ) : (
             <button
-              onClick={onConfirm}
-              className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+              onClick={handleConfirm}
+              disabled={isDeleting}
+              className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Delete {type === 'container' ? 'Container' : type === 'process' ? 'Process' : 'Channel'}
+              {isDeleting ? 'Deleting...' : `Delete ${type === 'container' ? 'Container' : type === 'process' ? 'Process' : 'Channel'}`}
             </button>
           )}
         </div>
@@ -381,6 +426,11 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
     member: GridMember | null;
   }>({ isOpen: false, member: null });
 
+  // Editable grid info state
+  const [editedName, setEditedName] = useState('');
+  const [editedDescription, setEditedDescription] = useState('');
+  const [isSavingGridInfo, setIsSavingGridInfo] = useState(false);
+
   const toast = useToast();
 
   const loadGridData = async () => {
@@ -493,8 +543,16 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
 
       const unlisten = await listen('process_deleted_ws', (event: any) => {
         console.log('🗑️ Process deleted via WebSocket in GridManagement', event.payload);
-        // Refresh grid data to update process list
-        loadGridData();
+
+        // Update state optimistically - remove the process from local state
+        const payload = event.payload;
+        if (payload && payload.process_id) {
+          console.log('Removing process from local state:', payload.process_id);
+          setSharedProcesses(prev => prev.filter(p => p.id !== payload.process_id));
+          setProcesses(prev => prev.filter(p => p.process_id !== payload.process_id));
+
+          // No need for background refresh - heartbeat is stopped so process won't reappear
+        }
       });
 
       return unlisten;
@@ -505,7 +563,37 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
     return () => {
       unlistenPromise.then(unlisten => unlisten());
     };
-  }, []);
+  }, [gridId]);
+
+  // Local listener for process deletion from this client
+  useEffect(() => {
+    const setupLocalListener = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+
+      const unlisten = await listen('process_deleted', (event: any) => {
+        console.log('🗑️ Process deleted locally in GridManagement', event.payload);
+        const payload = event.payload as { grid_id: string; process_id: string };
+
+        // Only update if this event is for the current grid
+        if (payload.grid_id === gridId) {
+          console.log('Removing process from local state after deletion:', payload.process_id);
+          // Update state optimistically - remove the process from local state
+          setSharedProcesses(prev => prev.filter(p => p.id !== payload.process_id));
+          setProcesses(prev => prev.filter(p => p.process_id !== payload.process_id));
+
+          // No need for background refresh - heartbeat is stopped so process won't reappear
+        }
+      });
+
+      return unlisten;
+    };
+
+    const unlistenPromise = setupLocalListener();
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [gridId]);
 
   const copyInviteCode = async () => {
     const code = gridDetails?.invite_code;
@@ -550,74 +638,69 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
   };
 
   const handleDeleteProcess = async (processId: string) => {
-    try {
-      // Owners and admins can delete ANY process
-      const canManageAllProcesses = gridDetails?.user_role === 'owner' || gridDetails?.user_role === 'admin';
+    console.log('🗑️ handleDeleteProcess called for:', processId);
 
-      // Check if this is a shared process first
-      const isSharedProcessItem = sharedProcesses.some(sp => sp.id === processId);
+    // Owners and admins can delete ANY process
+    const canManageAllProcesses = gridDetails?.user_role === 'owner' || gridDetails?.user_role === 'admin';
 
-      if (isSharedProcessItem && !canManageAllProcesses) {
-        // Regular members can't delete shared processes from other users
-        toast('Shared processes cannot be deleted from here. Contact the process owner.', 'warning');
-        setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' });
-        return;
-      }
+    // Check if this is a shared process first
+    const isSharedProcessItem = sharedProcesses.some(sp => sp.id === processId);
 
-      // Delete the process (works for both shared and regular processes)
-      await invoke('delete_grid_process', { gridId, processId });
-      toast('Process deleted successfully', 'success');
-
-      // Dispatch event to notify other components (like ContentPanel)
-      const deleteEvent = new CustomEvent('process-deleted', {
-        detail: { gridId, processId }
-      });
-      window.dispatchEvent(deleteEvent);
-
-      // Reload data
-      loadGridData();
-    } catch (error) {
-      console.error('Failed to delete process:', error);
-      toast(`Failed to delete process: ${error}`, 'error');
+    if (isSharedProcessItem && !canManageAllProcesses) {
+      // Regular members can't delete shared processes from other users
+      console.log('❌ Permission denied for shared process');
+      toast('Shared processes cannot be deleted from here. Contact the process owner.', 'warning');
+      throw new Error('Permission denied');
     }
-    setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' });
+
+    // Delete the process (works for both shared and regular processes)
+    console.log('📡 Calling delete_grid_process...');
+    try {
+      await invoke('delete_grid_process', { gridId, processId });
+      console.log('✅ delete_grid_process completed');
+    } catch (error) {
+      console.error('❌ delete_grid_process failed:', error);
+      throw error;
+    }
+
+    console.log('📢 Showing success toast');
+    toast('Process deleted successfully', 'success');
+
+    // Dispatch event to notify other components (like ContentPanel)
+    console.log('📤 Dispatching process-deleted event');
+    const deleteEvent = new CustomEvent('process-deleted', {
+      detail: { gridId, processId }
+    });
+    window.dispatchEvent(deleteEvent);
+
+    console.log('✅ handleDeleteProcess completed successfully');
+    // Note: UI refresh is handled by the 'process_deleted' event listener
   };
 
   const handleDeleteChannel = async (channelId: string) => {
-    try {
-      await invoke('delete_grid_channel', { gridId, channelId });
-      toast('Channel deleted successfully', 'success');
-      loadGridData(); // Reload data
-    } catch (error) {
-      console.error('Failed to delete channel:', error);
-      toast(`Failed to delete channel: ${error}`, 'error');
-    }
-    setDeleteModal({ isOpen: false, type: 'channel', id: '', name: '' });
+    await invoke('delete_grid_channel', { gridId, channelId });
+    toast('Channel deleted successfully', 'success');
+    loadGridData(); // Reload data
   };
 
   const handleDeleteContainerProcess = async (processId: string) => {
     try {
       setLoadingContainers(true);
-      
+
       // For container processes, use the comprehensive cleanup but with process-based deletion
       await invoke('cleanup_container_process', {
         processId,
         gridId
       });
-      
+
       // Force refresh of active processes to update UI
       window.dispatchEvent(new CustomEvent('refresh-processes'));
-      
+
       toast('Container deleted successfully', 'success');
       loadGridData(); // Reload data
-    } catch (error) {
-      console.error('Failed to delete container process:', error);
-      toast(`Failed to delete container: ${error}`, 'error');
     } finally {
       setLoadingContainers(false);
     }
-    
-    setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' });
   };
 
   const handleDeleteContainer = async (containerId: string) => {
@@ -657,22 +740,16 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
       containerKeys.forEach(key => localStorage.removeItem(key));
       
       toast('Container deleted successfully', 'success');
-      
+
       // Reload data to reflect changes
       loadGridData();
-      
+
       // Force refresh of active processes to update UI
       window.dispatchEvent(new CustomEvent('refresh-processes'));
-      
-    } catch (error) {
-      console.error('Failed to delete container:', error);
-      toast(`Failed to delete container: ${error}`, 'error');
+
     } finally {
       setLoadingContainers(false);
     }
-    
-    // Close the modal
-    setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' });
   };
 
   const handleForceDeleteContainer = async (containerId: string) => {
@@ -729,18 +806,13 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
       
       toast('Container forcefully deleted', 'success');
       loadGridData();
-      
+
       // Force refresh of active processes to update UI
       window.dispatchEvent(new CustomEvent('refresh-processes'));
-      
-    } catch (error) {
-      console.error('Failed to force delete container:', error);
-      toast(`Failed to force delete container: ${error}`, 'error');
+
     } finally {
       setLoadingContainers(false);
     }
-    
-    setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' });
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -753,6 +825,38 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
       toast(`Failed to update role: ${error}`, 'error');
     }
   };
+
+  const handleSaveGridInfo = async () => {
+    if (!gridDetails) return;
+
+    setIsSavingGridInfo(true);
+    try {
+      await invoke('update_grid_basic_info', {
+        gridId,
+        name: editedName || gridDetails.name,
+        description: editedDescription || null
+      });
+
+      toast('Grid updated successfully', 'success');
+      loadGridData(); // Reload data to get updated values
+
+      // Dispatch event to refresh grid list in sidebar
+      window.dispatchEvent(new CustomEvent('grid-updated', {
+        detail: { gridId, name: editedName }
+      }));
+    } catch (error) {
+      console.error('Failed to update grid:', error);
+      toast(`Failed to update grid: ${error}`, 'error');
+    } finally {
+      setIsSavingGridInfo(false);
+    }
+  };
+
+  // Initialize edited state when grid details load
+  if (gridDetails && !editedName && !editedDescription) {
+    setEditedName(gridDetails.name);
+    setEditedDescription(gridDetails.description || '');
+  }
 
   const canDeleteProcess = (process: ProcessInfo): boolean => {
     if (!gridDetails) return false;
@@ -1305,93 +1409,6 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
               </div>
             </div>
 
-            {/* Containers Section */}
-            <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
-              <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-                <Monitor className="w-5 h-5" />
-                Containers ({containers.length})
-              </h3>
-              
-              {loadingContainers && (
-                <div className="flex items-center gap-2 text-white/60 mb-4">
-                  <div className="w-4 h-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
-                  <span className="text-sm">Loading containers...</span>
-                </div>
-              )}
-              
-              <div className="space-y-3">
-                {Array.isArray(containers) && containers.map((container, index) => (
-                  <div key={container.container_id || index} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${
-                        container.status.toLowerCase() === 'running' ? 'bg-green-500' :
-                        container.status.toLowerCase() === 'stopped' ? 'bg-gray-500' :
-                        container.status.toLowerCase() === 'exited' ? 'bg-red-500' : 'bg-yellow-500'
-                      }`} />
-                      <div className="flex items-center gap-2">
-                        <Monitor className="w-4 h-4 text-blue-400" />
-                        <div>
-                          <div className="font-medium text-white">{container.container_name}</div>
-                          <div className="text-sm text-white/60">
-                            {container.container_type} • {container.image_full_name} • {container.status}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/40 font-mono">
-                        {container.container_id.slice(0, 8)}
-                      </span>
-                      
-                      {canDeleteContainer(container) && (
-                        <div className="flex items-center gap-1">
-                          {container.status.toLowerCase() === 'running' && (
-                            <button
-                              onClick={() => setDeleteModal({
-                                isOpen: true,
-                                type: 'container',
-                                id: container.container_id,
-                                name: container.container_name,
-                                forceDelete: true,
-                                containerStatus: container.status
-                              })}
-                              className="rounded-lg p-2 text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
-                              title="Force Delete Running Container"
-                            >
-                              <AlertTriangle className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setDeleteModal({
-                              isOpen: true,
-                              type: 'container',
-                              id: container.container_id,
-                              name: container.container_name,
-                              forceDelete: false,
-                              containerStatus: container.status
-                            })}
-                            className="rounded-lg p-2 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                            title="Delete Container"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                
-                {(!Array.isArray(containers) || containers.length === 0) && !loadingContainers && (
-                  <div className="text-center py-8 text-white/40">
-                    <Monitor className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No containers found</p>
-                    <p className="text-xs text-white/30 mt-1">Create containers from the main interface</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Channels */}
             <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
               <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
@@ -1449,66 +1466,58 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
               <h2 className="text-xl font-semibold text-white">Relay & Bandwidth Management</h2>
             </div>
 
-            {/* Bandwidth Display */}
-            <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
+            {/* Coming Soon Message */}
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-8">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                  <Wifi className="w-6 h-6 text-yellow-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-yellow-300 mb-2 text-lg">Coming Soon</h3>
+                  <p className="text-sm text-yellow-200/80 mb-4">
+                    Relay servers and bandwidth management features are currently under development.
+                    All connections currently use direct peer-to-peer networking.
+                  </p>
+                  <div className="space-y-2 text-sm text-yellow-200/70">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Relay server fallback for restricted networks</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Bandwidth usage tracking and quotas</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Connection strategy customization</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                      <span>Bandwidth purchase and management</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Preview sections (disabled) */}
+            <div className="rounded-xl border border-white/10 bg-[#111319] p-6 opacity-50">
               <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
                 <Wifi className="w-5 h-5" />
-                Bandwidth Usage
+                Bandwidth Usage (Preview)
               </h3>
-              <BandwidthDisplay gridId={gridId} />
+              <div className="bg-white/5 rounded-lg p-6 text-center text-white/40">
+                <p className="text-sm">Feature coming soon</p>
+              </div>
             </div>
 
-            {/* Relay Connection Mode */}
-            <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
+            <div className="rounded-xl border border-white/10 bg-[#111319] p-6 opacity-50">
               <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
                 <Radio className="w-5 h-5" />
-                Connection Strategy
+                Connection Strategy (Preview)
               </h3>
-              <p className="text-sm text-white/60 mb-4">
-                Choose how grid members connect to each other. P2P-first tries direct connections before using relay servers.
-              </p>
-              <RelayModeSelector gridId={gridId} />
-            </div>
-
-            {/* Purchase Bandwidth */}
-            <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
-              <h3 className="font-semibold text-white mb-4">Purchase Additional Bandwidth</h3>
-              <p className="text-sm text-white/60 mb-4">
-                Need more bandwidth? Purchase additional relay capacity for your grid.
-              </p>
-              <PurchaseBandwidthModal gridId={gridId} />
-            </div>
-
-            {/* Relay Information */}
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-6">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                  <Wifi className="w-5 h-5 text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-blue-300 mb-2">About Relay Servers</h3>
-                  <p className="text-sm text-blue-200/80 mb-3">
-                    Relay servers enable connections when direct peer-to-peer communication isn't possible due to firewalls or NAT configurations.
-                  </p>
-                  <ul className="space-y-2 text-sm text-blue-200/70">
-                    <li className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      Automatic fallback from P2P to STUN to TURN relay
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      Geographically distributed servers for low latency
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      Bandwidth pooled across all grid members
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      Secure encrypted connections (DTLS/SRTP)
-                    </li>
-                  </ul>
-                </div>
+              <div className="bg-white/5 rounded-lg p-6 text-center text-white/40">
+                <p className="text-sm">Feature coming soon</p>
               </div>
             </div>
           </div>
@@ -1520,28 +1529,55 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
             
             <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
               <h3 className="font-semibold text-white mb-4">Basic Information</h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-2">Grid Name</label>
                   <input
                     type="text"
-                    value={gridDetails.name}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
-                    readOnly
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-[#FF8A00]/50 focus:outline-none transition-colors"
+                    placeholder="Enter grid name"
+                    maxLength={50}
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-2">Description</label>
                   <textarea
-                    value={gridDetails.description || ''}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-[#FF8A00]/50 focus:outline-none transition-colors"
                     rows={3}
-                    readOnly
+                    placeholder="Enter grid description (optional)"
+                    maxLength={200}
                   />
                 </div>
-                
+
+                {/* Save button */}
+                {(editedName !== gridDetails.name || editedDescription !== (gridDetails.description || '')) && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveGridInfo}
+                      disabled={isSavingGridInfo || !editedName.trim()}
+                      className="rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                    >
+                      {isSavingGridInfo ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditedName(gridDetails.name);
+                        setEditedDescription(gridDetails.description || '');
+                      }}
+                      disabled={isSavingGridInfo}
+                      className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-white/80 mb-2">Grid Type</label>
@@ -1552,7 +1588,7 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
                       readOnly
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-white/80 mb-2">Max Members</label>
                     <input
@@ -1652,26 +1688,28 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
       <DeleteConfirmationModal
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, type: 'process', id: '', name: '' })}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (deleteModal.type === 'process') {
-            handleDeleteProcess(deleteModal.id);
+            await handleDeleteProcess(deleteModal.id);
           } else if (deleteModal.type === 'channel') {
-            handleDeleteChannel(deleteModal.id);
+            await handleDeleteChannel(deleteModal.id);
           } else if (deleteModal.type === 'container') {
             // Check if this is a container process (ID is a UUID) vs direct container (ID is container hash)
             if (deleteModal.id.length > 20 && deleteModal.id.includes('-')) {
               // This is a process ID (UUID format), use container process deletion
-              handleDeleteContainerProcess(deleteModal.id);
+              await handleDeleteContainerProcess(deleteModal.id);
             } else {
               // This is a direct container ID, use regular container deletion
-              handleDeleteContainer(deleteModal.id);
+              await handleDeleteContainer(deleteModal.id);
             }
           }
+          // Modal will close automatically after this completes
         }}
-        onForceConfirm={() => {
+        onForceConfirm={async () => {
           if (deleteModal.type === 'container') {
-            handleForceDeleteContainer(deleteModal.id);
+            await handleForceDeleteContainer(deleteModal.id);
           }
+          // Modal will close automatically after this completes
         }}
         title={`Delete ${deleteModal.type === 'container' ? 'Container' : deleteModal.type === 'process' ? 'Process' : 'Channel'}`}
         message={`Are you sure you want to delete this ${deleteModal.type}? This action cannot be undone.`}
