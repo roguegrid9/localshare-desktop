@@ -48,6 +48,7 @@ interface UserState {
   connection_status: 'connected' | 'disconnected' | 'unhealthy';
   token_expires_at: number | null;
   account_type?: 'guest' | 'authenticated';
+  tos_accepted?: boolean;
 }
 
 interface ConnectionStatus {
@@ -65,6 +66,7 @@ interface PromotionResponse {
     display_name: string;
     provider: string;
     is_provisional: boolean;
+    tos_accepted?: boolean;
   };
 }
 
@@ -193,6 +195,14 @@ export function useTauriCommands() {
     return await invoke('promote_account_with_username', {
       supabaseAccessToken,
       username
+    });
+  }, []);
+
+  const acceptTOS = useCallback(async (
+    tosVersion: string = '1.0'
+  ): Promise<void> => {
+    return await invoke('accept_tos', {
+      tosVersion
     });
   }, []);
 
@@ -990,6 +1000,7 @@ export function useTauriCommands() {
     promoteAccount,
     promoteAccountLegacy,
     promoteAccountWithUsername,
+    acceptTOS,
     clearSession,
     checkConnection,
     validateToken,

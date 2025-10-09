@@ -1,4 +1,4 @@
-import { Plus, Settings, User, Compass, LogOut, UserCog, Server } from "lucide-react";
+import { Plus, Settings, User, Compass, LogOut, UserCog, Server, MessageCircle } from "lucide-react";
 import type { GridSummary } from "../../types/grid";
 import { cx } from "../../utils/cx";
 import { useState, useRef, useEffect } from "react";
@@ -9,6 +9,7 @@ import { useGrids } from "../../hooks/useGrids";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { invoke } from "@tauri-apps/api/core";
 import { supabase } from "../../utils/supabase";
+import { open } from "@tauri-apps/plugin-shell";
 
 interface NetworkStatus {
   nat_type: string;
@@ -19,6 +20,11 @@ interface NetworkStatus {
   last_checked: string;
 }
 import { WifiOff, Shield, ShieldAlert } from "lucide-react";
+
+interface UserInfo {
+  username: string | null;
+  display_name: string | null;
+}
 
 export default function GridsRail({
   grids,
@@ -33,6 +39,7 @@ export default function GridsRail({
   const [openJoin, setOpenJoin] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   // const [showRelayModal, setShowRelayModal] = useState(false); // Commented out - Coming Soon
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +62,19 @@ export default function GridsRail({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showProfileMenu]);
+
+  useEffect(() => {
+    loadUserInfo();
+  }, []);
+
+  const loadUserInfo = async () => {
+    try {
+      const info = await invoke<UserInfo>('get_current_user');
+      setUserInfo(info);
+    } catch (error) {
+      console.error('Failed to load user info:', error);
+    }
+  };
 
   const handleCreateSuccess = (gridId?: string) => {
     setOpenCreate(false);
@@ -91,6 +111,14 @@ export default function GridsRail({
       } catch (error) {
         console.error('Failed to logout:', error);
       }
+    }
+  };
+
+  const handleSupportClick = async () => {
+    try {
+      await open('https://discord.gg/m5DupEDv');
+    } catch (error) {
+      console.error('Failed to open Discord link:', error);
     }
   };
 
@@ -249,6 +277,19 @@ export default function GridsRail({
           </div>
         </button> */}
 
+        {/* Support & Feedback Button */}
+        <button
+          className="h-9 w-9 grid place-items-center rounded-xl bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-colors group relative"
+          title="Support & Feedback"
+          onClick={handleSupportClick}
+        >
+          <MessageCircle className="h-4 w-4" />
+
+          <div className="absolute left-full ml-2 px-2 py-1 bg-[#111319] text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+            Support & Feedback
+          </div>
+        </button>
+
         {/* Profile with Dropdown Menu */}
         <div className="relative" ref={profileMenuRef}>
           <button
@@ -273,7 +314,7 @@ export default function GridsRail({
             <div className="absolute bottom-full left-full ml-2 mb-2 w-48 rounded-lg border border-white/10 bg-[#111319] shadow-xl z-50">
               <div className="p-2">
                 <div className="px-3 py-2 text-xs text-white/60 border-b border-white/10 mb-1">
-                  @imadethis
+                  @{userInfo?.username || 'loading...'}
                 </div>
                 
                 <button

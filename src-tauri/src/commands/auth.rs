@@ -171,6 +171,20 @@ pub async fn update_display_name(display_name: String) -> Result<(), String> {
         })
 }
 
+// Accept Terms of Service for authenticated users
+#[tauri::command]
+pub async fn accept_tos(tos_version: String) -> Result<(), String> {
+    log::info!("Tauri command: accept_tos called");
+    log::info!("TOS version: {}", tos_version);
+
+    crate::auth::accept_tos(tos_version)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to accept TOS: {}", e);
+            e.to_string()
+        })
+}
+
 // Get current user information
 #[tauri::command]
 pub async fn get_current_user() -> Result<crate::api::CurrentUserResponse, String> {

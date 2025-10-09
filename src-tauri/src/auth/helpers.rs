@@ -21,6 +21,26 @@ pub async fn get_stored_token() -> Result<String> {
     }
 }
 
+/// Accept Terms of Service for the current authenticated user
+pub async fn accept_tos(tos_version: String) -> Result<()> {
+    // Get current session to verify user is authenticated
+    let session = get_user_session().await?
+        .ok_or_else(|| anyhow::anyhow!("No active user session"))?;
+
+    // Only allow authenticated users to accept TOS
+    if session.account_type != "authenticated" {
+        bail!("TOS can only be accepted for authenticated accounts");
+    }
+
+    // Call server to record TOS acceptance
+    let coordinator = CoordinatorClient::new();
+    coordinator.accept_tos(&session.token, tos_version.clone()).await
+        .context("Failed to accept TOS on server")?;
+
+    log::info!("TOS successfully accepted, version: {}", tos_version);
+    Ok(())
+}
+
 /// Update username for the current authenticated user
 pub async fn update_user_username(new_username: String) -> Result<()> {
     // Get current session to verify user is authenticated

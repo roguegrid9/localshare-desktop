@@ -140,31 +140,21 @@ pub fn run() {
                     match update_handle.updater() {
                         Ok(updater) => match updater.check().await {
                             Ok(Some(update)) => {
-                                log::info!("Update available!");
+                                let new_version = update.version.clone();
+                                let current_version = update.current_version.clone();
 
-                                // Show dialog to user
-                                if let Err(e) = update_handle.emit("update-available", ()) {
+                                log::info!("Update available! Current: {}, New: {}", current_version, new_version);
+
+                                // Notify user that update is available (don't auto-download)
+                                if let Err(e) = update_handle.emit("update-available", &serde_json::json!({
+                                    "version": new_version,
+                                    "current_version": current_version,
+                                })) {
                                     log::error!("Failed to emit update-available event: {}", e);
                                 }
 
-                                // Download and install the update
-                                match update.download_and_install(|_, _| {}, || {}).await {
-                                    Ok(_) => {
-                                        log::info!("Update downloaded and installed successfully");
-                                        // Notify user to restart
-                                        if let Err(e) = update_handle.emit("update-installed", ()) {
-                                            log::error!("Failed to emit update-installed event: {}", e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to download/install update: {}", e);
-                                        if let Err(e) = update_handle.emit("update-error", &serde_json::json!({
-                                            "error": e.to_string()
-                                        })) {
-                                            log::error!("Failed to emit update-error event: {}", e);
-                                        }
-                                    }
-                                }
+                                // Note: We no longer auto-download here
+                                // User must click "Download Now" button which will trigger manual update
                             }
                             Ok(None) => {
                                 log::info!("No updates available - running latest version");
@@ -283,11 +273,18 @@ pub fn run() {
             validate_token,
             update_username,
             update_display_name,
+            accept_tos,
             get_current_user,
             check_username_availability,
             promote_account_with_username,
             get_auth_token,
             start_oauth_server,
+
+            // ============================================================================
+            // UPDATER COMMANDS
+            // ============================================================================
+            check_for_updates,
+            download_and_install_update,
 
             // ============================================================================
             // PROCESS MANAGEMENT COMMANDS

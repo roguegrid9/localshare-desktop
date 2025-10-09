@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { X, Download, AlertCircle, CheckCircle } from "lucide-react";
 
 type UpdateNotification = {
   id: string;
-  type: "update-available" | "update-installed" | "update-error";
+  type: "update-available" | "update-installed" | "update-error" | "update-downloading";
   version?: string;
   currentVersion?: string;
   error?: string;
+  progress?: number;
 };
 
 export function UpdateNotification() {
   const [notifications, setNotifications] = useState<UpdateNotification[]>([]);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
@@ -61,6 +64,7 @@ export function UpdateNotification() {
             error: event.payload.error,
           };
           setNotifications((prev) => [...prev, notification]);
+          setDownloading(false);
 
           // Auto-dismiss after 10 seconds
           setTimeout(() => {
@@ -68,6 +72,31 @@ export function UpdateNotification() {
           }, 10000);
         });
         unlisteners.push(unlisten3);
+
+        // Listen for download progress
+        const unlisten4 = await listen<{ progress: number; downloaded: number; total: number }>(
+          "update-download-progress",
+          (event) => {
+            setNotifications((prev) =>
+              prev.map((n) =>
+                n.type === "update-downloading"
+                  ? { ...n, progress: event.payload.progress }
+                  : n
+              )
+            );
+          }
+        );
+        unlisteners.push(unlisten4);
+
+        // Listen for installing state
+        const unlisten5 = await listen("update-installing", () => {
+          setNotifications((prev) =>
+            prev.map((n) =>
+              n.type === "update-downloading" ? { ...n, progress: 100 } : n
+            )
+          );
+        });
+        unlisteners.push(unlisten5);
       } catch (error) {
         // Silently fail in dev mode or if events aren't available
         console.debug("Update notification listeners not available:", error);
@@ -93,6 +122,39 @@ export function UpdateNotification() {
     }
   };
 
+  const handleDownloadUpdate = async (notificationId: string) => {
+    try {
+      setDownloading(true);
+
+      // Replace update-available notification with downloading notification
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notificationId
+            ? { ...n, type: "update-downloading", progress: 0 }
+            : n
+        )
+      );
+
+      await invoke("download_and_install_update");
+    } catch (error) {
+      console.error("Failed to download update:", error);
+      setDownloading(false);
+
+      // Show error notification
+      const id = Math.random().toString(36).slice(2);
+      const notification: UpdateNotification = {
+        id,
+        type: "update-error",
+        error: error instanceof Error ? error.message : String(error),
+      };
+      setNotifications((prev) => [...prev, notification]);
+
+      setTimeout(() => {
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }, 10000);
+    }
+  };
+
   if (notifications.length === 0) return null;
 
   return (
@@ -105,6 +167,8 @@ export function UpdateNotification() {
             "animate-slide-in flex items-start gap-3",
             notification.type === "update-available"
               ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
+              : notification.type === "update-downloading"
+              ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
               : notification.type === "update-installed"
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
               : "border-red-500/30 bg-red-500/10 text-red-300",
@@ -113,6 +177,9 @@ export function UpdateNotification() {
           <div className="flex-shrink-0 mt-0.5">
             {notification.type === "update-available" && (
               <Download className="w-4 h-4" />
+            )}
+            {notification.type === "update-downloading" && (
+              <Download className="w-4 h-4 animate-pulse" />
             )}
             {notification.type === "update-installed" && (
               <CheckCircle className="w-4 h-4" />
@@ -126,9 +193,38 @@ export function UpdateNotification() {
             {notification.type === "update-available" && (
               <div>
                 <p className="text-sm font-medium">Update Available</p>
-                <p className="text-xs opacity-80 mt-0.5">
+                <p className="text-xs opacity-80 mt-0.5 mb-2">
                   Version {notification.version} is available (current: {notification.currentVersion})
                 </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDownloadUpdate(notification.id)}
+                    disabled={downloading}
+                    className="text-xs px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 transition-colors disabled:opacity-50"
+                  >
+                    Download Now
+                  </button>
+                  <button
+                    onClick={() => handleDismiss(notification.id)}
+                    className="text-xs px-3 py-1 rounded-lg bg-transparent hover:bg-blue-500/20 border border-blue-500/30 transition-colors"
+                  >
+                    Remind Me Later
+                  </button>
+                </div>
+              </div>
+            )}
+            {notification.type === "update-downloading" && (
+              <div>
+                <p className="text-sm font-medium">
+                  {notification.progress === 100 ? "Installing Update..." : "Downloading Update..."}
+                </p>
+                <div className="mt-2 mb-1 bg-blue-500/20 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-full transition-all duration-300"
+                    style={{ width: `${notification.progress || 0}%` }}
+                  />
+                </div>
+                <p className="text-xs opacity-80">{notification.progress || 0}% complete</p>
               </div>
             )}
             {notification.type === "update-installed" && (
@@ -153,13 +249,15 @@ export function UpdateNotification() {
             )}
           </div>
 
-          <button
-            onClick={() => handleDismiss(notification.id)}
-            className="flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
-            aria-label="Dismiss notification"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {notification.type !== "update-downloading" && (
+            <button
+              onClick={() => handleDismiss(notification.id)}
+              className="flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+              aria-label="Dismiss notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       ))}
     </div>

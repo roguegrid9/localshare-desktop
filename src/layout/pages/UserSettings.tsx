@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, User, Save } from 'lucide-react';
+import { X, User, Save, Download } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../components/ui/Toaster';
+import { getVersion } from '@tauri-apps/api/app';
 
 interface UserSettingsProps {
   onClose: () => void;
@@ -23,11 +24,23 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
   const [editedDisplayName, setEditedDisplayName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string>('');
   const toast = useToast();
 
   useEffect(() => {
     loadUserInfo();
+    loadVersion();
   }, []);
+
+  const loadVersion = async () => {
+    try {
+      const version = await getVersion();
+      setCurrentVersion(version);
+    } catch (error) {
+      console.error('Failed to get app version:', error);
+    }
+  };
 
   const loadUserInfo = async () => {
     try {
@@ -72,6 +85,24 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
       toast(`Failed to update display name: ${error}`, 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    setCheckingUpdate(true);
+    try {
+      const updateInfo = await invoke<{ version: string; current_version: string } | null>('check_for_updates');
+
+      if (updateInfo) {
+        toast(`Update available: v${updateInfo.version}`, 'success');
+      } else {
+        toast('You\'re up to date!', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+      toast(`Failed to check for updates: ${error}`, 'error');
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
@@ -208,6 +239,25 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
                 <span className="text-white/60">Last Updated</span>
                 <span className="text-white/80">{new Date(userInfo.updated_at).toLocaleDateString()}</span>
               </div>
+            </div>
+          </div>
+
+          {/* App Info */}
+          <div className="rounded-xl border border-white/10 bg-[#0B0D10] p-6">
+            <h3 className="font-semibold text-white mb-4">Application</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-white/60">Version</span>
+                <span className="text-white/80 font-mono">{currentVersion || 'Loading...'}</span>
+              </div>
+              <button
+                onClick={handleCheckForUpdates}
+                disabled={checkingUpdate}
+                className="flex items-center gap-2 rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full justify-center"
+              >
+                <Download className="w-4 h-4" />
+                {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+              </button>
             </div>
           </div>
         </div>

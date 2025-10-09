@@ -1240,6 +1240,32 @@ impl CoordinatorClient {
         Ok(())
     }
 
+    /// Accept Terms of Service
+    pub async fn accept_tos(&self, token: &str, tos_version: String) -> Result<()> {
+        let url = format!("{}/api/v1/users/accept-tos", self.base_url);
+
+        let request_body = serde_json::json!({
+            "tos_version": tos_version
+        });
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send accept TOS request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("TOS acceptance failed with status {}: {}", status, body);
+        }
+
+        Ok(())
+    }
+
     /// Check username availability
     pub async fn check_username_availability(&self, username: String) -> Result<CheckUsernameAvailabilityResponse> {
         let url = format!("{}/api/v1/users/username/check?username={}",
