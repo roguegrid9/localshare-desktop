@@ -43,8 +43,8 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
 
     // Basic validation for invite code format
     const cleanCode = inviteCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleanCode.length < 6 || cleanCode.length > 8) {
-      toast("Invite code should be 6-8 characters", "error");
+    if (cleanCode.length !== 12) {
+      toast("Invite code should be 12 characters", "error");
       return;
     }
 
@@ -142,7 +142,7 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
               <div className="mb-6 p-3 rounded-lg bg-white/5 border border-white/10">
                 <p className="text-sm text-white/80 mb-2">Enter an invite code to join a collaborative grid:</p>
                 <ul className="text-xs text-white/60 space-y-1">
-                  <li>• Invite codes are 6-8 characters (e.g., ABC-1234)</li>
+                  <li>• Invite codes are 12 characters</li>
                   <li>• Get codes from grid owners or members</li>
                   <li>• Codes may have usage limits or expiration</li>
                 </ul>
@@ -160,10 +160,10 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
                       type="text"
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                      placeholder="ABC-1234"
+                      placeholder="ABC123DEF456"
                       className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none font-mono text-center text-lg tracking-wider"
                       disabled={isJoining}
-                      maxLength={8}
+                      maxLength={12}
                       autoComplete="off"
                     />
                     <button
@@ -179,7 +179,7 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
                     </button>
                   </div>
                   <p className="text-xs text-white/40 mt-1">
-                    Short, easy-to-share codes (6-8 characters). Dashes optional.
+                    12-character hexadecimal code
                   </p>
                 </div>
 
