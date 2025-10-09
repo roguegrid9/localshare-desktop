@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import UsernamePicker from './UsernamePicker';
-import TOSAcceptance from './TOSAcceptance';
 import { supabase } from "../../utils/supabase";
 import { useTauriCommands } from "../../hooks/useTauriCommands";
 import { invoke } from "@tauri-apps/api/core";
@@ -56,7 +55,6 @@ export default function Welcome({
   const [selectedUsername, setSelectedUsername] = useState<string | undefined>();
   const [pendingSupabaseToken, setPendingSupabaseToken] = useState<string | null>(null);
   const [waitingForOAuth, setWaitingForOAuth] = useState(false);
-  const [showTOSStep, setShowTOSStep] = useState(false);
   const canSubmit = useMemo(() => email && password.length >= 6, [email, password]);
 
   const {
@@ -64,7 +62,6 @@ export default function Welcome({
     promoteAccountWithUsername,
     getUserState,
     initializeApp,
-    acceptTOS,
   } = useTauriCommands();
 
   // Check for OAuth callback on mount
@@ -275,22 +272,10 @@ export default function Welcome({
       setBusy(true);
       setError(null);
 
-      let response;
       if (selectedUsername) {
-        response = await promoteAccountWithUsername(pendingSupabaseToken, selectedUsername);
+        await promoteAccountWithUsername(pendingSupabaseToken, selectedUsername);
       } else {
-        response = await promoteAccount(pendingSupabaseToken);
-      }
-
-      // Check if TOS has been accepted
-      const tosAccepted = response?.user_info?.tos_accepted ?? false;
-
-      if (!tosAccepted) {
-        // Show TOS acceptance modal
-        setShowUsernameStep(false);
-        setShowTOSStep(true);
-        setBusy(false);
-        return;
+        await promoteAccount(pendingSupabaseToken);
       }
 
       const userState = await getUserState();
@@ -303,36 +288,6 @@ export default function Welcome({
       setShowUsernameStep(false);
     }
   }, [pendingSupabaseToken, selectedUsername, promoteAccountWithUsername, promoteAccount, getUserState, onSessionCreated]);
-
-  const handleTOSAccept = useCallback(async () => {
-    try {
-      setBusy(true);
-      setError(null);
-
-      // Call the acceptTOS API
-      await acceptTOS('1.0');
-
-      // Continue to the app
-      const userState = await getUserState();
-      onSessionCreated(userState);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setBusy(false);
-      setShowTOSStep(false);
-    }
-  }, [acceptTOS, getUserState, onSessionCreated]);
-
-  const handleTOSDecline = useCallback(async () => {
-    try {
-      // User declined TOS - sign them out
-      await supabase.auth.signOut();
-      setShowTOSStep(false);
-      setError('You must accept the Terms of Service to use RogueGrid9');
-    } catch (e: any) {
-      console.error('Error signing out:', e);
-    }
-  }, []);
 
   // Email/password submit
   const submit = useCallback(async () => {
@@ -706,6 +661,27 @@ export default function Welcome({
                   Finish sign-in
                 </button>
               </div>
+
+              {/* Terms of Service Disclaimer */}
+              <div className="mt-6 pt-4 border-t border-white/10">
+                <p className="text-xs text-center text-gray-400 leading-relaxed">
+                  By signing in or creating an account, you agree to our{' '}
+                  <button
+                    onClick={() => open('https://roguegrid9.com/terms')}
+                    className="text-[#FF8A00] hover:text-[#FF3D00] underline transition-colors"
+                  >
+                    Terms of Service
+                  </button>
+                  {' '}and{' '}
+                  <button
+                    onClick={() => open('https://roguegrid9.com/privacy')}
+                    className="text-[#FF8A00] hover:text-[#FF3D00] underline transition-colors"
+                  >
+                    Privacy Policy
+                  </button>
+                  .
+                </p>
+              </div>
             </div>
 
           </>
@@ -747,14 +723,6 @@ export default function Welcome({
               </button>
             </div>
           </div>
-        )}
-
-        {showTOSStep && (
-          <TOSAcceptance
-            onAccept={handleTOSAccept}
-            onDecline={handleTOSDecline}
-            disabled={busy}
-          />
         )}
 
         {connectionStatus === "offline" && (
