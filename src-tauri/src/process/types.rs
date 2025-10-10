@@ -155,7 +155,7 @@ pub struct SimpleProcessConfig {
     // User-defined
     pub name: String,
     pub description: Option<String>,
-    
+
     // Process details (from discovery)
     pub pid: u32,
     pub port: u16,
@@ -163,6 +163,10 @@ pub struct SimpleProcessConfig {
     pub working_dir: String,
     pub executable_path: String,
     pub process_name: String,
+
+    // Traffic detection
+    pub service_type: Option<String>, // "http", "minecraft", "tcp", etc.
+    pub protocol: Option<String>,      // "http", "tcp", "minecraft", etc.
 }
 
 // Shared Process with simplified data structure
@@ -171,6 +175,7 @@ pub struct SharedProcess {
     pub id: String,
     pub grid_id: String,
     pub user_id: String,
+    pub device_id: String, // Unique device ID - identifies which computer owns this process
     pub config: SimpleProcessConfig,
     pub status: SharedProcessStatus,
     pub last_seen_at: Option<u64>,
@@ -251,6 +256,7 @@ pub struct ProcessAvailability {
     pub grid_status: GridProcessStatus,
     pub host_user_id: Option<String>,
     pub host_display_name: Option<String>,
+    pub host_device_id: Option<String>,  // Device ID of the host computer
     pub active_connections: u32,
 
     // Local state
@@ -289,6 +295,7 @@ impl Default for ProcessAvailability {
             grid_status: GridProcessStatus::Inactive,
             host_user_id: None,
             host_display_name: None,
+            host_device_id: None,
             active_connections: 0,
             local_status: LocalProcessStatus::Unavailable,
             local_port: None,

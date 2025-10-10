@@ -14,6 +14,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 const USER_SESSION_KEY: &str = "user_session";
 const USER_STATE_KEY: &str = "user_state";
+const DEVICE_ID_KEY: &str = "device_id";
 
 #[derive(Debug, Clone)]
 pub enum AccountType {
@@ -232,4 +233,32 @@ fn get_current_timestamp() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+// ===== DEVICE ID MANAGEMENT =====
+
+/// Get or create a unique device ID for this computer
+/// This ID persists across app restarts and identifies which computer owns which processes
+fn get_or_create_device_id() -> Result<String> {
+    let mut storage_guard = PERSISTENT_STORAGE.lock()
+        .map_err(|_| anyhow::anyhow!("Failed to acquire storage lock"))?;
+
+    // Check if device_id already exists
+    if let Some(device_id) = storage_guard.get(DEVICE_ID_KEY) {
+        log::debug!("Found existing device ID: {}", &device_id[..8]);
+        return Ok(device_id.clone());
+    }
+
+    // Generate new device ID
+    let device_id = uuid::Uuid::new_v4().to_string();
+    storage_guard.insert(DEVICE_ID_KEY.to_string(), device_id.clone());
+
+    log::info!("Generated new device ID: {}", &device_id[..8]);
+    Ok(device_id)
+}
+
+/// Public function to get the device ID
+/// This uniquely identifies this computer and is used to prevent process ownership confusion
+pub async fn get_device_id() -> Result<String> {
+    get_or_create_device_id()
 }

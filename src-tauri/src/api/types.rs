@@ -1154,6 +1154,9 @@ pub struct CreateSharedProcessRequest {
     pub working_dir: String,
     pub executable_path: String,
     pub process_name: String,
+    pub device_id: String, // Unique device ID - identifies which computer owns this process
+    pub service_type: Option<String>, // "http", "minecraft", "tcp", etc.
+    pub protocol: Option<String>,      // "http", "tcp", "minecraft", etc.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1167,6 +1170,7 @@ pub struct SharedProcessData {
     pub id: String,
     pub grid_id: String,
     pub user_id: String,
+    pub device_id: String, // Unique device ID - identifies which computer owns this process
     pub config: SharedProcessConfig,
     pub status: String,
     pub last_seen_at: Option<String>,
@@ -1184,6 +1188,8 @@ pub struct SharedProcessConfig {
     pub working_dir: String,
     pub executable_path: String,
     pub process_name: String,
+    pub service_type: Option<String>, // "http", "minecraft", "tcp", etc.
+    pub protocol: Option<String>,      // "http", "tcp", "minecraft", etc.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

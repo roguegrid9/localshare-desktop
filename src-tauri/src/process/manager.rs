@@ -575,6 +575,9 @@ impl ProcessManager {
             .ok_or_else(|| anyhow::anyhow!("No active session"))?
             .token;
 
+        // Get device ID to identify which computer owns this process
+        let device_id = crate::auth::storage::get_device_id().await?;
+
         let (service_type, protocol) = if let Some(port) = detected_port {
             Self::detect_service_type_from_config(config, port)
         } else {
@@ -584,10 +587,12 @@ impl ProcessManager {
         let registration_request = serde_json::json!({
             "grid_id": grid_id,
             "process_id": process_id,
+            "device_id": device_id,
             "process_type": service_type,
             "service_name": config.executable_path.split('/').last().unwrap_or("Unknown Process"),
             "port": detected_port,
             "protocol": protocol,
+            "service_type": service_type,
             "metadata": serde_json::json!({
                 "executable_path": config.executable_path,
                 "args": config.args,

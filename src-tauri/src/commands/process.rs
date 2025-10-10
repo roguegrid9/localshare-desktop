@@ -417,17 +417,23 @@ pub async fn create_shared_process(
     }
 
     let token = session.token;
-    
+
+    // Get device ID to identify which computer owns this process
+    let device_id = match crate::auth::storage::get_device_id().await {
+        Ok(id) => id,
+        Err(e) => return Err(format!("Failed to get device ID: {}", e)),
+    };
+
     // Create coordinator client
     let coordinator_client = CoordinatorClient::new();
-    
+
     // Set the token in the client
     {
         let mut client_token = coordinator_client.token.write().await;
         *client_token = token.clone();
     }
-    
-    // Create API request
+
+    // Create API request with device_id and traffic detection
     let api_request = CreateSharedProcessRequest {
         name: config.name.clone(),
         description: config.description.clone(),
@@ -437,6 +443,9 @@ pub async fn create_shared_process(
         working_dir: config.working_dir.clone(),
         executable_path: config.executable_path.clone(),
         process_name: config.process_name.clone(),
+        device_id: device_id.clone(),
+        service_type: config.service_type.clone(),
+        protocol: config.protocol.clone(),
     };
     
     // Call the backend API to create the shared process
@@ -456,6 +465,7 @@ pub async fn create_shared_process(
         id: api_response.id.clone(),
         grid_id: grid_id.clone(),
         user_id: api_response.process.user_id.clone(),
+        device_id: device_id.clone(),
         config: config.clone(),
         status: SharedProcessStatus::Running,
         last_seen_at: Some(now),
@@ -579,6 +589,7 @@ pub async fn get_grid_shared_processes(
                     id: api_process.id.clone(),
                     grid_id: api_process.grid_id.clone(),
                     user_id: api_process.user_id.clone(),
+                    device_id: api_process.device_id.clone(),
                     config: SimpleProcessConfig {
                         name: api_process.config.name,
                         description: api_process.config.description,
@@ -588,6 +599,8 @@ pub async fn get_grid_shared_processes(
                         working_dir: api_process.config.working_dir,
                         executable_path: api_process.config.executable_path,
                         process_name: api_process.config.process_name,
+                        service_type: api_process.config.service_type,
+                        protocol: api_process.config.protocol,
                     },
                     status: match api_process.status.as_str() {
                         "running" => SharedProcessStatus::Running,
@@ -768,6 +781,15 @@ async fn resume_all_shared_process_heartbeats(
 
     log::info!("Fetched {} grids to check for shared processes", grids.len());
 
+    // Get THIS device's ID to filter processes
+    let my_device_id = match crate::auth::storage::get_device_id().await {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("Failed to get device ID for heartbeat resumption: {}", e);
+            return Ok(());
+        }
+    };
+
     let mut total_processes = 0;
 
     // For each grid, fetch shared processes and resume heartbeats
@@ -777,9 +799,10 @@ async fn resume_all_shared_process_heartbeats(
                 log::info!("Grid {} has {} shared processes", grid.id, response.processes.len());
 
                 for process in response.processes {
-                    // Check if this user is the owner
-                    if process.user_id == session.user_id {
-                        log::info!("Resuming heartbeat for owned process {} in grid {}", process.id, grid.id);
+                    // CRITICAL FIX: Check if this user AND this device owns the process
+                    if process.user_id == session.user_id && process.device_id == my_device_id {
+                        log::info!("Resuming heartbeat for owned process {} in grid {} (device: {})",
+                                   process.id, grid.id, &my_device_id[..8]);
                         total_processes += 1;
 
                         // Convert SharedProcessData to SharedProcess
@@ -787,6 +810,7 @@ async fn resume_all_shared_process_heartbeats(
                             id: process.id.clone(),
                             grid_id: grid.id.clone(),
                             user_id: process.user_id.clone(),
+                            device_id: process.device_id.clone(),
                             config: SimpleProcessConfig {
                                 name: process.config.name.clone(),
                                 description: process.config.description.clone(),
@@ -796,6 +820,8 @@ async fn resume_all_shared_process_heartbeats(
                                 working_dir: process.config.working_dir.clone(),
                                 executable_path: process.config.executable_path.clone(),
                                 process_name: process.config.process_name.clone(),
+                                service_type: process.config.service_type.clone(),
+                                protocol: process.config.protocol.clone(),
                             },
                             status: match process.status.as_str() {
                                 "running" => SharedProcessStatus::Running,
