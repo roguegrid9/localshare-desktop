@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 src-tauri/target/
+
+# Environment variables
+.env
+.env.local
+.env.production

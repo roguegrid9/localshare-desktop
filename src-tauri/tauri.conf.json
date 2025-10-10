@@ -22,7 +22,7 @@
         "maximized": false,
         "center": true,
         "visible": true,
-        "devtools": true
+        "devtools": false
       }
     ],
     "security": {
@@ -42,7 +42,7 @@
     ],
     "createUpdaterArtifacts": true,
     "macOS": {
-      "signingIdentity": null,
+      "signingIdentity": "Developer ID Application: Peter Kozikowski (XQFJ894S34)",
       "hardenedRuntime": true,
       "entitlements": "entitlements.plist",
       "exceptionDomain": null
