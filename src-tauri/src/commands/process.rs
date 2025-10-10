@@ -721,16 +721,16 @@ async fn stop_process_heartbeat(
 
 /// Update device_id for a process (for adopting legacy processes)
 async fn update_process_device_id(token: &str, grid_id: &str, process_id: &str, device_id: &str) -> Result<(), String> {
-    use crate::api::client::CoordinatorClient;
+    use crate::api::client::{CoordinatorClient, COORDINATOR_BASE_URL};
 
     let client = CoordinatorClient::new();
-    let url = format!("{}/api/grids/{}/shared-processes/{}/device", client.base_url(), grid_id, process_id);
+    let url = format!("{}/api/grids/{}/shared-processes/{}/device", COORDINATOR_BASE_URL, grid_id, process_id);
 
     let body = serde_json::json!({
         "device_id": device_id
     });
 
-    let response = client.client()
+    let response = client.client
         .patch(&url)
         .header("Authorization", format!("Bearer {}", token))
         .json(&body)
