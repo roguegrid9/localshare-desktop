@@ -252,18 +252,24 @@ function P2PConnectionSection({
   const [reconnectionDelay, setReconnectionDelay] = useState<number>(0);
   const [reconnectionCountdown, setReconnectionCountdown] = useState<number>(0);
 
-  // Auto-host the grid when component loads
+  // Auto-host the grid only if the user owns the process
   useEffect(() => {
     const ensureGridHosted = async () => {
+      // Only auto-host if this is the owner's process
+      if (!dashboard || !dashboard.is_owner) {
+        console.log('Skipping auto-host: not the process owner');
+        return;
+      }
+
       try {
         await invoke('auto_host_grid', { gridId });
-        console.log('Grid auto-hosted successfully');
+        console.log('Grid auto-hosted successfully (owner)');
       } catch (error) {
         console.warn('Failed to auto-host grid:', error);
       }
     };
     ensureGridHosted();
-  }, [gridId]);
+  }, [gridId, dashboard?.is_owner]);
 
   // Listen for transport_started event to get the actual local port
   useEffect(() => {
