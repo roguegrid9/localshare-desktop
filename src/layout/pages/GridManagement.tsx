@@ -521,20 +521,35 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
   // Load grid data on mount and ensure grid is hosted
   useEffect(() => {
     const initializeGrid = async () => {
-      // Auto-host the grid for P2P connections
-      try {
-        await invoke('auto_host_grid', { gridId });
-        console.log('Grid auto-hosted successfully');
-      } catch (error) {
-        console.warn('Failed to auto-host grid:', error);
-      }
-
-      // Load grid data
+      // Load grid data first
       loadGridData();
     };
 
     initializeGrid();
   }, [gridId]);
+
+  // Auto-host only if user is owner or admin
+  useEffect(() => {
+    const autoHostIfOwner = async () => {
+      if (!gridDetails) return;
+
+      // Only auto-host if user is owner or admin
+      const isOwnerOrAdmin = gridDetails.user_role === 'owner' || gridDetails.user_role === 'admin';
+      if (!isOwnerOrAdmin) {
+        console.log('Skipping auto-host: user is not owner/admin (role:', gridDetails.user_role, ')');
+        return;
+      }
+
+      try {
+        await invoke('auto_host_grid', { gridId });
+        console.log('Grid auto-hosted successfully (owner/admin)');
+      } catch (error) {
+        console.warn('Failed to auto-host grid:', error);
+      }
+    };
+
+    autoHostIfOwner();
+  }, [gridId, gridDetails?.user_role]);
 
   // WebSocket listener for process deletion from other clients
   useEffect(() => {
