@@ -110,6 +110,14 @@ export function CreateShareDialog({
         customName: share.custom_name
       });
 
+      // Auto-host the grid to make the process connectable
+      try {
+        await window.__TAURI__.core.invoke('auto_host_grid', { gridId });
+        console.log('Grid auto-hosted after share creation');
+      } catch (error) {
+        console.warn('Failed to auto-host grid:', error);
+      }
+
       onShareCreated();
       onClose();
     } catch (err: any) {

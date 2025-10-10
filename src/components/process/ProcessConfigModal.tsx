@@ -217,13 +217,21 @@ export default function ProcessConfigModal({
     
     try {
       // Create process via Tauri command (this will handle both local state and API calls)
-      const processId = await invoke<string>('create_shared_process', { 
+      const processId = await invoke<string>('create_shared_process', {
         gridId,
-        config 
+        config
       });
-      
+
+      // Auto-host the grid to make the process connectable
+      try {
+        await invoke('auto_host_grid', { gridId });
+        console.log('Grid auto-hosted after process creation');
+      } catch (error) {
+        console.warn('Failed to auto-host grid:', error);
+      }
+
       setSubmitSuccess(true);
-      
+
       // Show success briefly then call onSuccess
       setTimeout(() => {
         onSuccess(processId);
