@@ -13,7 +13,9 @@ import {
   Server,
   AlertTriangle,
   Share2,
-  Info
+  Info,
+  Copy,
+  CheckCircle2
 } from 'lucide-react';
 import type { ProcessDashboard as ProcessDashboardType } from '../../types/dashboard';
 import type { ProcessAvailability, LocalProcessStatus } from '../../types/process';
@@ -517,12 +519,14 @@ function P2PConnectionSection({
                   connectionStatus === 'connected' ? 'bg-green-400' :
                   connectionStatus === 'reconnecting' ? 'bg-orange-400 animate-pulse' :
                   connectionStatus === 'connecting' ? 'bg-yellow-400 animate-pulse' :
+                  isHosting && dashboard.status === 'running' ? 'bg-green-400' :
                   'bg-gray-400'
                 }`} />
                 <span className="text-sm text-white/80 font-medium">
                   {connectionStatus === 'connected' ? '✓ Connected' :
                    connectionStatus === 'reconnecting' ? '🔄 Reconnecting...' :
                    connectionStatus === 'connecting' ? '⏳ Connecting...' :
+                   isHosting && dashboard.status === 'running' ? '✓ Ready for P2P' :
                    '○ Disconnected'}
                 </span>
               </div>
@@ -580,6 +584,28 @@ function P2PConnectionSection({
                 Process Port: {dashboard.local_port}
               </div>
             </div>
+
+            {/* Service Type & Copy Address */}
+            {dashboard.status === 'running' && (
+              <div className="mb-4 space-y-2">
+                {/* Service Type Badge */}
+                {dashboard.service_type && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-blue-200/60">Type:</span>
+                    <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                      {dashboard.service_type.toUpperCase()}
+                    </span>
+                  </div>
+                )}
+
+                {/* Copy Address */}
+                <CopyAddressButton
+                  port={dashboard.local_port}
+                  serviceType={dashboard.service_type}
+                  protocol={dashboard.protocol}
+                />
+              </div>
+            )}
 
             {/* Action Buttons */}
             {isAvailable && !isConnected && (
@@ -663,6 +689,63 @@ function P2PConnectionSection({
         </div>
       </div>
     </Section>
+  );
+}
+
+function CopyAddressButton({
+  port,
+  serviceType,
+  protocol
+}: {
+  port: number;
+  serviceType?: string;
+  protocol?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Format address based on service type
+  const getAddress = () => {
+    const isHTTP = serviceType === 'http' || protocol === 'http';
+    return isHTTP ? `http://localhost:${port}` : `localhost:${port}`;
+  };
+
+  const address = getAddress();
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  return (
+    <div className="bg-blue-500/10 border border-blue-500/20 rounded p-2">
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <div className="text-xs text-blue-300/80 mb-1">Local Address</div>
+          <code className="text-sm text-blue-300 font-mono">{address}</code>
+        </div>
+        <button
+          onClick={handleCopy}
+          className="ml-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition-all"
+        >
+          {copied ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Copied!
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              Copy
+            </>
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
 

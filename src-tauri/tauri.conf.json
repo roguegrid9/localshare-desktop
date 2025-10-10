@@ -22,7 +22,7 @@
         "maximized": false,
         "center": true,
         "visible": true,
-        "devtools": false
+        "devtools": true
       }
     ],
     "security": {

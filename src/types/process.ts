@@ -84,7 +84,7 @@ export interface SimpleProcessConfig {
   // User-defined
   name: string;
   description?: string;
-  
+
   // From discovery (read-only display)
   pid: number;
   port: number;
@@ -92,6 +92,10 @@ export interface SimpleProcessConfig {
   working_dir: string;
   executable_path: string;
   process_name: string; // e.g., "node", "python3", "java"
+
+  // Traffic detection
+  service_type?: string;  // "http", "tcp", "minecraft", etc.
+  protocol?: string;       // "http", "tcp", "udp", etc.
 }
 
 // Validation error interface

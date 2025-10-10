@@ -21,7 +21,11 @@ export interface ProcessDashboard {
   local_port: number;
   p2p_port: number;
   connection_status: 'active' | 'inactive' | 'error';
-  
+
+  // Traffic detection
+  service_type?: string;
+  protocol?: string;
+
   // System stats (if running)
   cpu_percent?: number;
   memory_mb?: number;
