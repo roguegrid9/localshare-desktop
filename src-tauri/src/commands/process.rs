@@ -719,6 +719,32 @@ async fn stop_process_heartbeat(
     Ok(())
 }
 
+/// Update device_id for a process (for adopting legacy processes)
+async fn update_process_device_id(token: &str, grid_id: &str, process_id: &str, device_id: &str) -> Result<(), String> {
+    use crate::api::client::CoordinatorClient;
+
+    let client = CoordinatorClient::new();
+    let url = format!("{}/api/grids/{}/shared-processes/{}/device", client.base_url(), grid_id, process_id);
+
+    let body = serde_json::json!({
+        "device_id": device_id
+    });
+
+    let response = client.client()
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update device_id: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to update device_id: {}", response.status()));
+    }
+
+    Ok(())
+}
+
 /// Send a single heartbeat for a shared process
 async fn send_process_heartbeat(process_id: &str, grid_id: &str) -> Result<(), String> {
     use crate::auth::storage::get_user_session;
@@ -799,10 +825,35 @@ async fn resume_all_shared_process_heartbeats(
                 log::info!("Grid {} has {} shared processes", grid.id, response.processes.len());
 
                 for process in response.processes {
-                    // CRITICAL FIX: Check if this user AND this device owns the process
-                    if process.user_id == session.user_id && process.device_id == my_device_id {
+                    // Check if this user owns the process
+                    if process.user_id != session.user_id {
+                        continue; // Not our user, skip
+                    }
+
+                    // Check device ownership
+                    let should_resume = if process.device_id == my_device_id {
+                        // Exact match - this is our process
                         log::info!("Resuming heartbeat for owned process {} in grid {} (device: {})",
                                    process.id, grid.id, &my_device_id[..8]);
+                        true
+                    } else if process.device_id.is_empty() || process.device_id.starts_with("migration-") {
+                        // Legacy process without device_id or migration placeholder - adopt it
+                        log::info!("Adopting legacy process {} in grid {} (old device_id: {:?}, new device_id: {})",
+                                   process.id, grid.id, &process.device_id, &my_device_id[..8]);
+
+                        // Update the device_id in the database
+                        if let Err(e) = update_process_device_id(&session.token, &grid.id, &process.id, &my_device_id).await {
+                            log::error!("Failed to update device_id for process {}: {}", process.id, e);
+                        }
+                        true
+                    } else {
+                        // Different device_id - belongs to another machine
+                        log::debug!("Skipping process {} - belongs to different device (theirs: {}, ours: {})",
+                                   process.id, &process.device_id[..8], &my_device_id[..8]);
+                        false
+                    };
+
+                    if should_resume {
                         total_processes += 1;
 
                         // Convert SharedProcessData to SharedProcess
