@@ -1,5 +1,11 @@
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
+
+/// Get the current app version
+#[tauri::command]
+pub fn get_app_version(app: AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
+}
 
 /// Check for updates manually (triggered by user)
 #[tauri::command]

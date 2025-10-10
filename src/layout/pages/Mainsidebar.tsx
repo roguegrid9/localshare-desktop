@@ -1,4 +1,4 @@
-import { Plus, Settings, User, Compass, LogOut, UserCog, Server, MessageCircle } from "lucide-react";
+import { Plus, Settings, User, Compass, LogOut, UserCog, Server, MessageCircle, Download, RefreshCw } from "lucide-react";
 import type { GridSummary } from "../../types/grid";
 import { cx } from "../../utils/cx";
 import { useState, useRef, useEffect } from "react";
@@ -43,6 +43,12 @@ export default function GridsRail({
   // const [showRelayModal, setShowRelayModal] = useState(false); // Commented out - Coming Soon
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
+  // Version & Update state
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; current_version: string } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   const { refreshGrids } = useGrids();
   // Docker functionality removed
   const { networkStatus, loading: networkLoading, checkNetworkStatus } = useNetworkStatus();
@@ -65,7 +71,55 @@ export default function GridsRail({
 
   useEffect(() => {
     loadUserInfo();
+    loadAppVersion();
+    setupUpdateListener();
   }, []);
+
+  const loadAppVersion = async () => {
+    try {
+      const version = await invoke<string>('get_app_version');
+      setAppVersion(version);
+    } catch (error) {
+      console.error('Failed to load app version:', error);
+      setAppVersion("0.1.4"); // Fallback
+    }
+  };
+
+  const setupUpdateListener = async () => {
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen<{ version: string; current_version: string }>('update-available', (event) => {
+        console.log('Update available:', event.payload);
+        setUpdateAvailable(event.payload);
+      });
+    } catch (error) {
+      console.debug('Update listener not available:', error);
+    }
+  };
+
+  const checkForUpdates = async () => {
+    try {
+      setCheckingUpdate(true);
+      const result = await invoke<{ version: string; current_version: string } | null>('check_for_updates');
+      if (result) {
+        setUpdateAvailable(result);
+      }
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const downloadUpdate = async () => {
+    try {
+      setDownloading(true);
+      await invoke('download_and_install_update');
+    } catch (error) {
+      console.error('Failed to download update:', error);
+      setDownloading(false);
+    }
+  };
 
   const loadUserInfo = async () => {
     try {
@@ -149,6 +203,60 @@ export default function GridsRail({
         className="h-12 w-12 grid place-items-center transition-colors"
       >
         <img src="/assets/logo1.svg" alt="RG9" className="h-15 w-15" />
+      </button>
+
+      {/* Version Display & Update Button */}
+      <button
+        onClick={updateAvailable ? downloadUpdate : checkForUpdates}
+        disabled={checkingUpdate || downloading}
+        className={cx(
+          "relative h-8 w-14 rounded-lg text-[10px] font-mono transition-all group",
+          updateAvailable
+            ? "bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] text-white hover:opacity-90"
+            : "bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60",
+          (checkingUpdate || downloading) && "opacity-50 cursor-not-allowed"
+        )}
+      >
+        <div className="flex flex-col items-center justify-center leading-tight">
+          {updateAvailable ? (
+            <>
+              <Download className="h-3 w-3 mb-0.5" />
+              <span>{updateAvailable.version}</span>
+            </>
+          ) : (
+            <>
+              {checkingUpdate ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <span>v{appVersion}</span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Tooltip */}
+        <div className="absolute left-full ml-2 px-3 py-2 bg-[#111319] text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+          {updateAvailable ? (
+            <div>
+              <div className="font-semibold text-[#FF8A00]">Update Available!</div>
+              <div className="text-white/70 mt-1">
+                v{updateAvailable.version} → Click to download
+              </div>
+            </div>
+          ) : downloading ? (
+            <div>
+              <div className="font-semibold">Downloading...</div>
+              <div className="text-white/70 mt-1">Installing update</div>
+            </div>
+          ) : checkingUpdate ? (
+            "Checking for updates..."
+          ) : (
+            <div>
+              <div className="font-semibold">Version {appVersion}</div>
+              <div className="text-white/70 mt-1">Click to check for updates</div>
+            </div>
+          )}
+        </div>
       </button>
 
       <div className="h-px w-8 bg-white/10 my-2" />
