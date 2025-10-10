@@ -66,13 +66,7 @@ pub async fn update_user_username(new_username: String) -> Result<()> {
         bail!("Username cannot start or end with underscore or dash");
     }
 
-    // Check availability with server
-    let availability = check_username_availability(new_username.clone()).await?;
-    if !availability.available {
-        bail!("Username is not available: {}", availability.message);
-    }
-
-    // Try to update on server first
+    // Try to update on server first (server will validate availability and exclude current user)
     let coordinator = CoordinatorClient::new();
     coordinator.update_username(&session.token, new_username.clone()).await
         .context("Failed to update username on server")?;
