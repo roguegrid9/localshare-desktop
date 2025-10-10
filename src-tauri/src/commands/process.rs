@@ -846,8 +846,34 @@ async fn resume_all_shared_process_heartbeats(
                             log::error!("Failed to update device_id for process {}: {}", process.id, e);
                         }
                         true
+                    } else if let Some(last_seen) = &process.last_seen_at {
+                        // Check if process was recently active (within last 10 minutes)
+                        // This handles device_id changes due to app restarts or storage issues
+                        if let Ok(last_seen_time) = chrono::DateTime::parse_from_rfc3339(last_seen) {
+                            let now = chrono::Utc::now();
+                            let age = now.signed_duration_since(last_seen_time.with_timezone(&chrono::Utc));
+
+                            if age.num_minutes() < 10 {
+                                log::info!("Adopting recently active process {} in grid {} (age: {} minutes, old device: {}, new device: {})",
+                                           process.id, grid.id, age.num_minutes(), &process.device_id[..8], &my_device_id[..8]);
+
+                                // Update the device_id in the database
+                                if let Err(e) = update_process_device_id(&session.token, &grid.id, &process.id, &my_device_id).await {
+                                    log::error!("Failed to update device_id for process {}: {}", process.id, e);
+                                }
+                                true
+                            } else {
+                                // Too old - likely belongs to another machine
+                                log::debug!("Skipping old process {} - last seen {} minutes ago (theirs: {}, ours: {})",
+                                           process.id, age.num_minutes(), &process.device_id[..8], &my_device_id[..8]);
+                                false
+                            }
+                        } else {
+                            log::warn!("Failed to parse last_seen_at for process {}: {}", process.id, last_seen);
+                            false
+                        }
                     } else {
-                        // Different device_id - belongs to another machine
+                        // Different device_id and no last_seen - belongs to another machine
                         log::debug!("Skipping process {} - belongs to different device (theirs: {}, ours: {})",
                                    process.id, &process.device_id[..8], &my_device_id[..8]);
                         false

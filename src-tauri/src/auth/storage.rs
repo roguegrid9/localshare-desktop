@@ -237,23 +237,54 @@ fn get_current_timestamp() -> u64 {
 
 // ===== DEVICE ID MANAGEMENT =====
 
+use std::path::PathBuf;
+use std::fs;
+
+/// Get the path to the device_id file
+fn get_device_id_file_path() -> Result<PathBuf> {
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
+
+    let app_dir = config_dir.join("roguegrid9");
+
+    // Create directory if it doesn't exist
+    if !app_dir.exists() {
+        fs::create_dir_all(&app_dir)
+            .context("Failed to create app config directory")?;
+    }
+
+    Ok(app_dir.join("device_id"))
+}
+
 /// Get or create a unique device ID for this computer
 /// This ID persists across app restarts and identifies which computer owns which processes
 fn get_or_create_device_id() -> Result<String> {
-    let mut storage_guard = PERSISTENT_STORAGE.lock()
-        .map_err(|_| anyhow::anyhow!("Failed to acquire storage lock"))?;
+    let device_id_path = get_device_id_file_path()?;
 
-    // Check if device_id already exists
-    if let Some(device_id) = storage_guard.get(DEVICE_ID_KEY) {
-        log::debug!("Found existing device ID: {}", &device_id[..8]);
-        return Ok(device_id.clone());
+    // Try to read existing device_id from file
+    if device_id_path.exists() {
+        match fs::read_to_string(&device_id_path) {
+            Ok(device_id) => {
+                let device_id = device_id.trim().to_string();
+                if !device_id.is_empty() {
+                    log::info!("Loaded existing device ID: {}", &device_id[..8]);
+                    return Ok(device_id);
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to read device_id file: {}", e);
+            }
+        }
     }
 
     // Generate new device ID
     let device_id = uuid::Uuid::new_v4().to_string();
-    storage_guard.insert(DEVICE_ID_KEY.to_string(), device_id.clone());
 
-    log::info!("Generated new device ID: {}", &device_id[..8]);
+    // Save to file
+    fs::write(&device_id_path, &device_id)
+        .context("Failed to write device_id to file")?;
+
+    log::info!("Generated and saved new device ID: {}", &device_id[..8]);
     Ok(device_id)
 }
 
