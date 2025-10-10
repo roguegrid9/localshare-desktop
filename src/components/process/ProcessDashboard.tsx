@@ -556,11 +556,22 @@ function P2PConnectionSection({
               )}
 
               {connectionUrl && connectionStatus === 'connected' && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded p-2 mb-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-green-300/80">Local URL:</span>
-                    <code className="text-xs text-green-300 font-mono">{connectionUrl}</code>
-                  </div>
+                <div className="mb-2 space-y-2">
+                  {/* Service Type Badge for connected guests */}
+                  {dashboard.service_type && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-green-300/80">Type:</span>
+                      <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-300 border border-green-500/30 font-medium">
+                        {dashboard.service_type.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+
+                  <CopyAddressButton
+                    port={parseInt(connectionUrl.split(':')[1]) || dashboard.local_port}
+                    serviceType={dashboard.service_type}
+                    protocol={dashboard.protocol}
+                  />
                 </div>
               )}
 

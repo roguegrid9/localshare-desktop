@@ -477,18 +477,23 @@ impl P2PConnection {
     }
 
     pub async fn handle_signal(&mut self, signal_data: serde_json::Value) -> Result<()> {
-        log::info!("Handling WebRTC signal: {:?}", signal_data);
+        log::info!("Handling WebRTC signal for session {}", self.session_id);
 
         // Check if this is an ICE candidate (has "candidate" key but no "type" key)
         if signal_data.get("candidate").is_some() && signal_data.get("type").is_none() {
-            log::info!("Received ICE candidate");
-
             let candidate_data = signal_data.get("candidate").unwrap();
+            let candidate_str = candidate_data
+                .get("candidate")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            log::info!("Received remote ICE candidate for session {}: {}", self.session_id,
+                       candidate_str.split_whitespace().nth(7).unwrap_or("unknown-type"));
 
             let candidate = candidate_data
                 .get("candidate")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing candidate in ICE"))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing candidate string in ICE candidate"))?;
 
             let sdp_mid = candidate_data
                 .get("sdpMid")
@@ -510,15 +515,16 @@ impl P2PConnection {
                 };
                 match peer_connection.add_ice_candidate(ice_candidate).await {
                     Ok(_) => {
-                        log::info!("Added ICE candidate");
+                        log::info!("✓ Successfully added remote ICE candidate for session {}", self.session_id);
                     }
                     Err(e) => {
-                        log::error!("❌ Failed to add ICE candidate: {}", e);
+                        log::error!("❌ Failed to add ICE candidate for session {}: {}", self.session_id, e);
                         return Err(anyhow::anyhow!("Failed to add ICE candidate: {}", e));
                     }
                 }
             } else {
-                log::error!("❌ Peer connection is None when trying to add ICE candidate");
+                log::error!("❌ Peer connection is None when trying to add ICE candidate for session {}", self.session_id);
+                return Err(anyhow::anyhow!("Peer connection not initialized"));
             }
             return Ok(());
         }
@@ -531,10 +537,11 @@ impl P2PConnection {
 
         match signal_type {
             "offer" => {
-                log::info!("Received WebRTC offer");
+                log::info!("Received WebRTC offer for session {}", self.session_id);
 
                 // Initialize WebRTC if not already done
                 if self.peer_connection.lock().await.is_none() {
+                    log::info!("Initializing WebRTC for incoming offer (session {})", self.session_id);
                     self.init_webrtc().await?;
                 }
 
@@ -543,19 +550,38 @@ impl P2PConnection {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing SDP in offer"))?;
 
+                log::debug!("Offer SDP length: {} bytes for session {}", sdp.len(), self.session_id);
+
                 let pc_guard = self.peer_connection.lock().await;
                 if let Some(peer_connection) = pc_guard.as_ref() {
                     // Set remote description (the offer)
                     let offer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::offer(
                         sdp.to_string()
                     )?;
-                    peer_connection.set_remote_description(offer).await?;
+                    log::debug!("Setting remote description (offer) for session {}", self.session_id);
+                    peer_connection.set_remote_description(offer).await
+                        .map_err(|e| {
+                            log::error!("Failed to set remote description for session {}: {}", self.session_id, e);
+                            e
+                        })?;
+                    log::info!("✓ Remote description set for session {}", self.session_id);
 
                     // Create answer
-                    let answer = peer_connection.create_answer(None).await?;
-                    peer_connection.set_local_description(answer.clone()).await?;
+                    log::debug!("Creating answer for session {}", self.session_id);
+                    let answer = peer_connection.create_answer(None).await
+                        .map_err(|e| {
+                            log::error!("Failed to create answer for session {}: {}", self.session_id, e);
+                            e
+                        })?;
 
-                    log::info!("Created WebRTC answer");
+                    log::debug!("Setting local description (answer) for session {}", self.session_id);
+                    peer_connection.set_local_description(answer.clone()).await
+                        .map_err(|e| {
+                            log::error!("Failed to set local description for session {}: {}", self.session_id, e);
+                            e
+                        })?;
+
+                    log::info!("✓ Created and set WebRTC answer for session {}", self.session_id);
 
                     // Send answer back via signal sender
                     let answer_signal = serde_json::json!({
@@ -577,36 +603,36 @@ impl P2PConnection {
                 }
             }
             "answer" => {
-                log::info!("Received WebRTC answer");
+                log::info!("Received WebRTC answer for session {}", self.session_id);
 
                 let sdp = signal_data
                     .get("sdp")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing SDP in answer"))?;
 
-                log::info!("Extracted SDP from answer, attempting to lock peer connection");
+                log::debug!("Answer SDP length: {} bytes for session {}", sdp.len(), self.session_id);
 
                 let pc_guard = self.peer_connection.lock().await;
-                log::info!("Peer connection lock acquired");
 
                 if let Some(peer_connection) = pc_guard.as_ref() {
-                    log::info!("Peer connection exists, creating answer description");
+                    log::debug!("Creating answer description for session {}", self.session_id);
                     let answer = webrtc::peer_connection::sdp::session_description::RTCSessionDescription::answer(
                         sdp.to_string()
                     )?;
-                    log::info!("Answer description created, setting remote description");
+                    log::debug!("Setting remote description (answer) for session {}", self.session_id);
 
                     match peer_connection.set_remote_description(answer).await {
                         Ok(_) => {
-                            log::info!("✅ Set remote description (answer) successfully");
+                            log::info!("✅ Set remote description (answer) successfully for session {}", self.session_id);
                         }
                         Err(e) => {
-                            log::error!("❌ Failed to set remote description: {}", e);
+                            log::error!("❌ Failed to set remote description for session {}: {}", self.session_id, e);
                             return Err(anyhow::anyhow!("Failed to set remote description: {}", e));
                         }
                     }
                 } else {
-                    log::error!("❌ Peer connection is None when trying to set answer");
+                    log::error!("❌ Peer connection is None when trying to set answer for session {}", self.session_id);
+                    return Err(anyhow::anyhow!("Peer connection not initialized"));
                 }
             }
             _ => {
@@ -1424,9 +1450,15 @@ impl P2PConnection {
 
             Box::pin(async move {
                 if let Some(candidate) = candidate {
-                    log::info!("Generated ICE candidate: {}", candidate);
-                    // Detect connection type from candidate for future bandwidth tracking
                     let candidate_json = candidate.to_json().unwrap_or_default();
+                    log::info!("Generated ICE candidate for session {}: type={} protocol={} address={}",
+                        session_id,
+                        candidate_json.candidate.split_whitespace().nth(7).unwrap_or("unknown"),
+                        candidate_json.candidate.split_whitespace().nth(2).unwrap_or("unknown"),
+                        candidate_json.candidate.split_whitespace().nth(4).unwrap_or("unknown")
+                    );
+
+                    // Detect connection type from candidate for future bandwidth tracking
                     let detected_connection_type = if candidate_json.candidate.contains("relay") {
                         "turn_relay" // This will use TURN server bandwidth
                     } else if candidate_json.candidate.contains("srflx") {
@@ -1470,9 +1502,37 @@ impl P2PConnection {
                     if let Some(sender) = guard.as_ref() {
                         if let Err(e) = sender.send(signal) {
                             log::error!("Failed to send ICE candidate: {}", e);
+                        } else {
+                            log::debug!("Sent ICE candidate to peer via WebSocket");
                         }
+                    } else {
+                        log::error!("Signal sender not available - cannot send ICE candidate!");
                     }
+                } else {
+                    log::info!("ICE gathering completed for session {} (null candidate received)", session_id);
                 }
+            })
+        }));
+
+        // ICE connection state handler for detailed connectivity debugging
+        let session_id_ice = self.session_id.clone();
+        let grid_id_ice = self.grid_id.clone();
+        peer_connection.on_ice_connection_state_change(Box::new(move |s| {
+            let session_id = session_id_ice.clone();
+            let grid_id = grid_id_ice.clone();
+            Box::pin(async move {
+                log::info!("ICE connection state changed to: {:?} for session {} grid {}", s, session_id, grid_id);
+            })
+        }));
+
+        // ICE gathering state handler
+        let session_id_gathering = self.session_id.clone();
+        let grid_id_gathering = self.grid_id.clone();
+        peer_connection.on_ice_gathering_state_change(Box::new(move |s| {
+            let session_id = session_id_gathering.clone();
+            let grid_id = grid_id_gathering.clone();
+            Box::pin(async move {
+                log::info!("ICE gathering state changed to: {:?} for session {} grid {}", s, session_id, grid_id);
             })
         }));
 
@@ -1534,8 +1594,26 @@ impl P2PConnection {
                             })).ok();
                             SessionState::Failed
                         }
+                        RTCPeerConnectionState::Closed => {
+                            log::error!("P2P connection closed unexpectedly for grid: {} session: {}. This may indicate a network issue, firewall blocking WebRTC traffic, or ICE connection failure.", grid_id, session_id);
+                            // Emit host disconnected event with closed reason
+                            app_handle.emit("host_disconnected", &serde_json::json!({
+                                "grid_id": grid_id,
+                                "session_id": session_id,
+                                "host_user_id": peer_user_id,
+                                "reason": "connection_closed"
+                            })).ok();
+                            SessionState::Failed
+                        }
                         RTCPeerConnectionState::Connecting => SessionState::Connecting,
-                        _ => return,
+                        RTCPeerConnectionState::New => {
+                            log::debug!("P2P connection in new state for grid: {}", grid_id);
+                            return;
+                        }
+                        _ => {
+                            log::warn!("Unknown P2P connection state {:?} for grid: {}", s, grid_id);
+                            return;
+                        }
                     };
 
                     // Update state
