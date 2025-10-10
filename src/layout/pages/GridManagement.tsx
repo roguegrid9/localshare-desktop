@@ -875,14 +875,21 @@ export default function GridManagement({ gridId, onClose }: GridManagementProps)
 
   const canDeleteProcess = (process: ProcessInfo): boolean => {
     if (!gridDetails) return false;
-    
+
     // Check if this is a shared process - shared processes have different deletion rules
     if (isSharedProcess(process)) {
-      // Shared processes can only be "removed" by the grid owner/admin (removing access)
-      // but they can't be truly deleted as they belong to another user
-      return gridDetails.user_role === 'owner' || gridDetails.user_role === 'admin';
+      // Grid owner/admin can delete any shared process
+      if (gridDetails.user_role === 'owner' || gridDetails.user_role === 'admin') return true;
+
+      // Process owner can always delete their own shared process
+      // Find the original shared process to get the user_id
+      const sharedProcess = sharedProcesses.find(sp => sp.id === process.process_id);
+      if (sharedProcess) {
+        // Will need to get current user ID - for now always show delete button for shared processes
+        return true;
+      }
     }
-    
+
     // Owner and admin can delete any regular process
     if (gridDetails.user_role === 'owner' || gridDetails.user_role === 'admin') return true;
     // Users can delete their own processes (would need to check owner_id from backend)
