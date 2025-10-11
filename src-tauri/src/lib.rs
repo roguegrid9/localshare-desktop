@@ -310,6 +310,7 @@ pub fn run() {
             get_process_availability,
             connect_to_process,
             disconnect_from_process,
+            cleanup_stale_connection,
             resume_heartbeats_after_auth,
 
             // ============================================================================

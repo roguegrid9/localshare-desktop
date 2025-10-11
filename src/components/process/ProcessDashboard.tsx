@@ -329,7 +329,7 @@ function P2PConnectionSection({
       if (data.grid_id === gridId) {
         setConnectionStatus('disconnected');
         setReconnectionAttempt(0);
-        setErrorMessage(`❌ Failed to reconnect after ${data.max_attempts} attempts. Please try reconnecting manually.`);
+        setErrorMessage(`Failed to reconnect after ${data.max_attempts} attempts. Please try connecting again.`);
         console.error('Reconnection failed after max attempts');
       }
     }).then(fn => unlisteners.push(fn));
@@ -338,7 +338,7 @@ function P2PConnectionSection({
       const data = event.payload;
       if (data.grid_id === gridId) {
         setConnectionStatus('reconnecting');
-        setErrorMessage('🔌 Connection lost. Attempting to reconnect...');
+        setErrorMessage('Connection lost. Reconnecting...');
         console.log('Host disconnected, will attempt reconnection');
       }
     }).then(fn => unlisteners.push(fn));
@@ -379,6 +379,13 @@ function P2PConnectionSection({
     setErrorMessage(null);
 
     try {
+      // First, cleanup any stale connections
+      console.log('Cleaning up stale connections before connecting...');
+      await invoke('cleanup_stale_connection', {
+        gridId,
+        processId,
+      });
+
       // Connect to process - this will:
       // 1. Establish P2P connection to host
       // 2. Register connection in database
@@ -529,35 +536,25 @@ function P2PConnectionSection({
                   'bg-gray-400'
                 }`} />
                 <span className="text-sm text-white/80 font-medium">
-                  {connectionStatus === 'connected' ? '✓ Connected' :
-                   connectionStatus === 'reconnecting' ? '🔄 Reconnecting...' :
-                   connectionStatus === 'connecting' ? '⏳ Connecting...' :
-                   isHosting && dashboard.status === 'running' ? '✓ Ready for P2P' :
-                   '○ Disconnected'}
+                  {connectionStatus === 'connected' ? 'Connected' :
+                   connectionStatus === 'reconnecting' ? 'Reconnecting...' :
+                   connectionStatus === 'connecting' ? 'Connecting...' :
+                   isHosting && dashboard.status === 'running' ? 'Ready' :
+                   'Disconnected'}
                 </span>
               </div>
 
-              {/* Reconnection Progress */}
+              {/* Reconnection Progress - simplified */}
               {connectionStatus === 'reconnecting' && reconnectionAttempt > 0 && (
                 <div className="bg-orange-500/10 border border-orange-500/20 rounded p-3 mb-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-orange-300 font-medium">
-                      Attempt {reconnectionAttempt} of {maxReconnectionAttempts}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-orange-300">
+                      Reconnecting... ({reconnectionAttempt}/{maxReconnectionAttempts})
                     </span>
-                    <span className="text-xs text-orange-400 font-mono">
-                      {reconnectionCountdown > 0 ? `${reconnectionCountdown}s` : 'Connecting...'}
-                    </span>
+                    {reconnectionCountdown > 0 && (
+                      <span className="text-xs text-orange-400">{reconnectionCountdown}s</span>
+                    )}
                   </div>
-                  <div className="w-full bg-orange-900/20 rounded-full h-1.5">
-                    <div
-                      className="bg-orange-400 h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${(reconnectionAttempt / maxReconnectionAttempts) * 100}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-orange-300/80 mt-2 flex items-center gap-1">
-                    <Activity className="w-3 h-3 animate-spin" />
-                    Auto-reconnection in progress. Connection will restore automatically.
-                  </p>
                 </div>
               )}
 
@@ -582,40 +579,15 @@ function P2PConnectionSection({
               )}
 
               {errorMessage && (
-                <div className={`border rounded p-3 mb-2 ${
-                  errorMessage.includes('❌')
-                    ? 'bg-red-500/10 border-red-500/20'
-                    : 'bg-yellow-500/10 border-yellow-500/20'
-                }`}>
-                  <p className={`text-xs ${
-                    errorMessage.includes('❌') ? 'text-red-300' : 'text-yellow-300'
-                  }`}>{errorMessage}</p>
+                <div className="bg-red-500/10 border border-red-500/20 rounded p-3 mb-2">
+                  <p className="text-xs text-red-300">{errorMessage}</p>
                 </div>
               )}
             </div>
 
-            {/* Process Info */}
-            <div className="space-y-2 text-sm text-blue-200/70 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                Process Port: {dashboard.local_port}
-              </div>
-            </div>
-
-            {/* Service Type & Copy Address */}
-            {dashboard.status === 'running' && (
-              <div className="mb-4 space-y-2">
-                {/* Service Type Badge */}
-                {dashboard.service_type && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-blue-200/60">Type:</span>
-                    <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
-                      {dashboard.service_type.toUpperCase()}
-                    </span>
-                  </div>
-                )}
-
-                {/* Copy Address */}
+            {/* Copy Address - only shown for hosts */}
+            {dashboard.status === 'running' && isHosting && !connectionUrl && (
+              <div className="mb-4">
                 <CopyAddressButton
                   port={dashboard.local_port}
                   serviceType={dashboard.service_type}
@@ -677,29 +649,15 @@ function P2PConnectionSection({
               </div>
             )}
 
-            {/* Status Messages */}
+            {/* Status Messages - simplified */}
             {dashboard.status !== 'running' && (
-              <p className="text-xs text-yellow-300 mt-3 flex items-center gap-1.5">
-                <AlertTriangle className="w-3 h-3" />
-                Process must be running to share via P2P
-              </p>
-            )}
-            {dashboard.status === 'running' && connectionStatus === 'disconnected' && !isConnecting && !errorMessage && (
-              <p className="text-xs text-blue-300 mt-3 flex items-center gap-1.5">
-                <Info className="w-3 h-3" />
-                Ready to connect via P2P
+              <p className="text-xs text-yellow-300/80 mt-3">
+                Process must be running to share
               </p>
             )}
             {connectionStatus === 'connected' && (
-              <p className="text-xs text-green-300 mt-3 flex items-center gap-1.5">
-                <Share2 className="w-3 h-3" />
-                {isHosting ? 'Process is accessible to grid members' : 'Connected to remote process'}
-              </p>
-            )}
-            {connectionStatus === 'reconnecting' && (
-              <p className="text-xs text-orange-300 mt-3 flex items-center gap-1.5">
-                <Activity className="w-3 h-3 animate-spin" />
-                Auto-reconnection in progress...
+              <p className="text-xs text-green-300/80 mt-3">
+                {isHosting ? 'Accessible to grid members' : 'Connected to remote process'}
               </p>
             )}
           </div>

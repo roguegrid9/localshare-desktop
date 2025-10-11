@@ -1145,3 +1145,53 @@ pub async fn disconnect_from_process(
         Err("P2P manager not initialized".to_string())
     }
 }
+
+/// Cleanup any stale connection to a process before establishing a new one
+#[tauri::command]
+pub async fn cleanup_stale_connection(
+    grid_id: String,
+    process_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    log::info!(
+        "Cleaning up stale connection for process {} in grid {}",
+        process_id,
+        grid_id
+    );
+
+    // Get process availability to check if we have an existing connection
+    let availability = match get_process_availability(grid_id.clone(), process_id.clone(), state.clone()).await {
+        Ok(Some(avail)) => avail,
+        Ok(None) => {
+            log::info!("No availability data, no cleanup needed");
+            return Ok(false);
+        }
+        Err(e) => {
+            log::warn!("Failed to get availability for cleanup: {}", e);
+            return Ok(false);
+        }
+    };
+
+    // If we're connected but connection_id exists, disconnect
+    if matches!(availability.local_status, crate::process::types::LocalProcessStatus::Connected) {
+        if let Some(conn_id) = availability.connection_id {
+            log::info!("Found stale connection {}, disconnecting...", conn_id);
+            match disconnect_from_process(grid_id, process_id, conn_id, state).await {
+                Ok(_) => {
+                    log::info!("Successfully cleaned up stale connection");
+                    // Wait a bit for cleanup to propagate
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    return Ok(true);
+                }
+                Err(e) => {
+                    log::warn!("Failed to disconnect stale connection: {}", e);
+                    // Continue anyway, maybe it's already gone
+                }
+            }
+        } else {
+            log::warn!("Status is 'connected' but no connection_id found - possible stale state");
+        }
+    }
+
+    Ok(false)
+}
