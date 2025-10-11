@@ -42,7 +42,7 @@
     ],
     "createUpdaterArtifacts": true,
     "macOS": {
-      "signingIdentity": "Developer ID Application: Peter Kozikowski (XQFJ894S34)",
+      "signingIdentity": null,
       "hardenedRuntime": true,
       "entitlements": "entitlements.plist",
       "exceptionDomain": null
