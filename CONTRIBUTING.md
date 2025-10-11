@@ -45,7 +45,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 ### Enforcement
 
-Violations can be reported to [conduct@roguegrid.com](mailto:conduct@roguegrid.com). All reports will be reviewed and handled confidentially.
+Violations can be reported to [conduct@roguegrid.com](mailto:team@roguegrid.com). All reports will be reviewed and handled confidentially.
 
 ---
 
@@ -494,9 +494,9 @@ When adding features, update:
 
 **Stuck? Ask for help!**
 
-- 💬 **Discord:** [discord.gg/roguegrid9](https://discord.gg/roguegrid9) - Fastest response
+- 💬 **Discord:** [discord.gg/roguegrid9](https://discord.gg/7cs9Uh32) - Fastest response
 - 🐛 **GitHub Issues:** For bug reports
-- 📧 **Email:** [dev@roguegrid.com](mailto:dev@roguegrid.com)
+- 📧 **Email:** [dev@roguegrid.com](mailto:team@roguegrid.com)
 
 ### Stay Updated
 
@@ -538,7 +538,7 @@ By contributing to RogueGrid9, you agree that your contributions will be license
 
 Every contribution matters - no matter how small. Thank you for helping make RogueGrid9 better!
 
-**Questions?** Don't hesitate to ask on [Discord](https://discord.gg/roguegrid9) or open an issue.
+**Questions?** Don't hesitate to ask on [Discord](https://discord.gg/7cs9Uh32) or open an issue.
 
 ---
 
@@ -546,4 +546,4 @@ Every contribution matters - no matter how small. Thank you for helping make Rog
 
 **RogueGrid9** - Built with ❤️ by the community
 
-[GitHub](https://github.com/roguegrid9/roguegrid-desktop) • [Discord](https://discord.gg/roguegrid9) • [Website](https://roguegrid9.com)
+[GitHub](https://github.com/roguegrid9/roguegrid-desktop) • [Discord](https://discord.gg/7cs9Uh32) • [Website](https://roguegrid9.com)
