@@ -37,7 +37,7 @@ type CreateGridResponse = {
   invite_code?: string;
 };
 
-type WizardStep = 1 | 2 | 3 | 4;
+type WizardStep = 1 | 2;
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -58,30 +58,15 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
 
   const stepTitles = {
     1: "Grid Settings",
-    2: "Add Processes",
-    3: "Add Channels", 
-    4: "Share & Complete"
+    2: "Complete"
   };
 
-  const handleNext = () => {
-    if (currentStep < 4) {
-      if (currentStep === 1 && !formData.name.trim()) {
-        toast("Grid name is required", "error");
-        return;
-      }
-      if (currentStep === 3) {
-        // Step 3 -> 4: Create the grid
-        createGrid();
-      } else {
-        setCurrentStep((prev) => (prev + 1) as WizardStep);
-      }
+  const handleCreateGrid = () => {
+    if (!formData.name.trim()) {
+      toast("Grid name is required", "error");
+      return;
     }
-  };
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep((prev) => (prev - 1) as WizardStep);
-    }
+    createGrid();
   };
 
   const createGrid = async () => {
@@ -97,12 +82,12 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
       };
 
       console.log("Creating grid with request:", request);
-      
+
       const response = await invoke<CreateGridResponse>("create_grid", { request });
-      
+
       console.log("Grid created successfully:", response);
       setCreatedGrid(response);
-      setCurrentStep(4);
+      setCurrentStep(2);
       
     } catch (error) {
       console.error("Failed to create grid:", error);
@@ -155,7 +140,7 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
       />
       
       {/* Modal */}
-      <div className="relative w-full max-w-lg mx-4">
+      <div className="relative w-full max-w-md mx-4">
         <div className="rounded-xl border border-white/10 bg-[#111319] p-6 shadow-2xl">
           {/* Header with Progress */}
           <div className="flex items-center justify-between mb-6">
@@ -177,7 +162,7 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
           {/* Progress Bar */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
-              {[1, 2, 3, 4].map((step) => (
+              {[1, 2].map((step) => (
                 <div
                   key={step}
                   className={cx(
@@ -194,7 +179,7 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
             <div className="w-full bg-white/10 rounded-full h-1">
               <div
                 className="bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] h-1 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / 4) * 100}%` }}
+                style={{ width: `${(currentStep / 2) * 100}%` }}
               />
             </div>
           </div>
@@ -261,67 +246,11 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
                     <option value={100}>100 members</option>
                   </select>
                 </div>
-
-                <div className="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-white/5">
-                  <div>
-                    <div className="font-medium">Public Grid</div>
-                    <div className="text-sm text-white/60">Allow anyone with invite code to join</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, is_public: !prev.is_public }))}
-                    className={cx(
-                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                      formData.is_public ? "bg-gradient-to-r from-[#FF8A00] to-[#FF3D00]" : "bg-white/20"
-                    )}
-                  >
-                    <span
-                      className={cx(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        formData.is_public ? "translate-x-6" : "translate-x-1"
-                      )}
-                    />
-                  </button>
-                </div>
               </div>
             )}
 
-            {currentStep === 2 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium mb-4">Add Processes</h3>
-                <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                    </svg>
-                  </div>
-                  <p className="text-white/60 mb-2">Process management coming soon!</p>
-                  <p className="text-sm text-white/40">
-                    After creating your grid, you'll be able to add terminals, game servers, and other processes.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {currentStep === 3 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium mb-4">Add Channels</h3>
-                <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2M7 4h10l2 16H5l2-16zM9 9h6M9 12h6m-7 3h8" />
-                    </svg>
-                  </div>
-                  <p className="text-white/60 mb-2">Channel system coming soon!</p>
-                  <p className="text-sm text-white/40">
-                    Voice chat, text channels, and file sharing will be available after grid creation.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Cleaned up Step 4 */}
-            {currentStep === 4 && createdGrid && (
+            {/* Step 2: Success */}
+            {currentStep === 2 && createdGrid && (
               <div className="space-y-4">
                 <div className="text-center mb-4">
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
@@ -353,29 +282,6 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
                   </div>
                 </div>
 
-                {/* Advanced Sharing Options */}
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
-                  <h4 className="font-medium text-blue-300 mb-3">Advanced Sharing</h4>
-                  <p className="text-sm text-blue-200 mb-3">
-                    Create custom invite codes with specific permissions and expiry times
-                  </p>
-                  
-                  <ShareButton
-                    resourceType={ResourceType.GridInvite}
-                    resourceId={createdGrid.grid.id}
-                    resourceName={createdGrid.grid.name}
-                    gridId={createdGrid.grid.id}
-                    variant="secondary"
-                    size="sm"
-                    onSuccess={(code) => {
-                      toast(`Custom invite code generated: ${code.access_code}`, "success");
-                    }}
-                    onError={(error) => {
-                      toast(error, "error");
-                    }}
-                  />
-                </div>
-
                 {/* Next Steps */}
                 <div className="space-y-3">
                   <div className="rounded-lg border border-green-500/20 bg-green-500/10 p-3">
@@ -399,23 +305,13 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
 
           {/* Navigation Buttons */}
           <div className="flex gap-3">
-            {currentStep > 1 && currentStep < 4 && (
+            {currentStep === 1 ? (
               <button
-                onClick={handleBack}
-                disabled={isCreating}
-                className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium hover:border-white/20 disabled:opacity-50"
+                onClick={handleCreateGrid}
+                disabled={isCreating || !formData.name.trim()}
+                className="w-full rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
-                Back
-              </button>
-            )}
-            
-            {currentStep < 4 ? (
-              <button
-                onClick={handleNext}
-                disabled={isCreating || (currentStep === 1 && !formData.name.trim())}
-                className="flex-1 rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {currentStep === 3 ? (isCreating ? "Creating..." : "Create Grid") : "Next"}
+                {isCreating ? "Creating..." : "Create Grid"}
               </button>
             ) : (
               <button
