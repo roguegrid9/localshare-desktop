@@ -152,14 +152,6 @@ impl ProcessManager {
 
         log::info!("Starting regular process for grid {}: {}", grid_id, config.executable_path);
 
-        // REMOVE this check that prevents multiple processes per grid:
-        // {
-        //     let processes = self.active_processes.lock().await;
-        //     if processes.contains_key(&grid_id) {
-        //         return Err(anyhow::anyhow!("Grid {} already has a running process", grid_id));
-        //     }
-        // }
-
         if !std::path::Path::new(&config.executable_path).exists() {
             return Err(anyhow::anyhow!("Executable not found: {}", config.executable_path));
         }
@@ -836,7 +828,7 @@ impl ProcessManager {
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid original port"))?;
 
         let minimal_detected_process = crate::discovery::types::DetectedProcess {
-            pid: 0, // Placeholder PID for discovered processes
+            pid: 0,
             name: config.env_vars.get("DISPLAY_NAME").cloned().unwrap_or("Unknown".to_string()),
             command: config.args.join(" "),
             working_dir: config.working_directory.clone(),

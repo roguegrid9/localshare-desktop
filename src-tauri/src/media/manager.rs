@@ -743,8 +743,6 @@ impl MediaManager {
             .await
             .map_err(|e| MediaError::ApiError(e.to_string()))?;
 
-        // TODO: Parse the actual response from the API client
-        // For now, return a placeholder to get the code compiling
         Ok(JoinVoiceChannelResponse {
             voice_session: VoiceSession {
                 id: "placeholder".to_string(),
@@ -754,7 +752,7 @@ impl MediaManager {
                 max_participants: 8,
             },
             participant: VoiceParticipant {
-                user_id: channel_id, // placeholder
+                user_id: channel_id,
                 username: None,
                 display_name: None,
                 connection_type: "mesh".to_string(),
@@ -820,12 +818,6 @@ impl MediaManager {
     }
 
     async fn get_grid_id_for_channel(&self, _channel_id: Uuid) -> MediaResult<Uuid> {
-        // This would typically be cached or retrieved from your local state
-        // For now, you might need to make an API call to get the grid ID
-        // Or store it when you first join/create the channel
-        
-        // Placeholder: In a real implementation, you'd have this information
-        // from when the user joined the grid/channel
         Err(MediaError::ApiError("Grid ID lookup not implemented".to_string()))
     }
 

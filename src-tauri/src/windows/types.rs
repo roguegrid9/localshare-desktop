@@ -25,7 +25,7 @@ pub enum TabContentType {
         channel_name: String,
         media_type: MediaType,
     },
-    /// ADD THIS: Voice channel content (for backward compatibility)
+    /// Voice channel content
     VoiceChannel {
         data: VoiceChannelData,
     },
@@ -49,7 +49,7 @@ pub enum TabContentType {
     Welcome,
 }
 
-// ADD THIS: Data structure for voice channels
+/// Data structure for voice channels
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceChannelData {
     pub channel_id: String,
@@ -240,7 +240,6 @@ impl Tab {
                 };
                 (format!("{}", channel_name), Some(icon.to_string()))
             },
-            // ADD THIS:
             TabContentType::VoiceChannel { data } => {
                 (format!("{}", data.channel_name), Some("mic".to_string()))
             },

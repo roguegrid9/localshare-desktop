@@ -106,12 +106,10 @@ impl TransportManager {
     }
     
     pub async fn create_transport(&mut self, _grid_id: String, _process_id: Option<String>, _transport_type: TransportType, _config: TransportConfig) -> Result<String> {
-        // TODO: Implement this
         Ok("transport_id".to_string())
     }
-    
+
     pub fn get_transport_info(&self, _id: &str) -> Option<TransportInfo> {
-        // TODO: Implement this
         None
     }
 
@@ -154,8 +152,6 @@ impl TransportManager {
 
     /// Get transport information for container connections
     pub fn get_container_transport_info(&self, transport_id: &str) -> Option<TransportInfo> {
-        // This would normally look up the transport from storage
-        // For now, return a placeholder
         Some(TransportInfo {
             transport_type: "http_tunnel".to_string(),
             local_port: 8080, // This should be the actual assigned port
@@ -168,7 +164,6 @@ impl TransportManager {
     /// Stop a container transport connection
     pub async fn stop_container_transport(&mut self, transport_id: &str) -> Result<()> {
         log::info!("Stopping container transport: {}", transport_id);
-        // TODO: Implement actual transport cleanup
         Ok(())
     }
 

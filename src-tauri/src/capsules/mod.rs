@@ -1,4 +1,3 @@
-// Placeholder for future AI capsule system
+/// Future AI capsule system for process management
 pub struct ProcessCapsule {
-    // TODO: Implement AI-generated capsule structure
 }

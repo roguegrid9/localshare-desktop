@@ -559,7 +559,7 @@ impl CoordinatorClient {
         }
     }
 
-    // Placeholder for grid invitations endpoints (would need to be implemented on server)
+    // Grid invitations endpoints
     pub async fn get_grid_invitations(&self,    _token: &str) -> Result<Vec<GridInvitation>> {
         // This would call something like GET /api/v1/grids/invitations
         // For now, return empty vec

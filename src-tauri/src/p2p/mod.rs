@@ -3,8 +3,8 @@ pub mod connection;
 use crate::api::types::{P2PSessionInfo, WebRTCSignalPayload};
 use crate::api::client::CoordinatorClient;
 use crate::auth::storage::{get_user_session, get_user_state};
-use crate::websocket::WebSocketManager; // Add this import
-use crate::process::ProcessManager; // Add to imports at the top
+use crate::websocket::WebSocketManager;
+use crate::process::ProcessManager;
 use anyhow::{Result, Context};
 use connection::P2PConnection;
 use std::collections::HashMap;
@@ -42,9 +42,8 @@ pub struct P2PManager {
     app_handle: AppHandle,
     connections: Arc<Mutex<HashMap<String, P2PConnection>>>, // Key: grid_id or grid_id:user_id
     signal_sender: Arc<Mutex<Option<mpsc::UnboundedSender<serde_json::Value>>>>, // WebSocket sender
-    api_client: Arc<CoordinatorClient>, // Wrap in Arc
-    websocket_manager: Arc<Mutex<WebSocketManager>>, // Add this field here
-    // Add this new field:
+    api_client: Arc<CoordinatorClient>,
+    websocket_manager: Arc<Mutex<WebSocketManager>>,
     process_data_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<(String, Vec<u8>)>>>>,
     reconnection_states: Arc<Mutex<HashMap<String, ReconnectionState>>>, // Track reconnection per grid
 }
@@ -250,7 +249,7 @@ impl P2PManager {
         log::info!("WebSocket sender connected to P2P manager");
     }
 
-    // Add this method to set up communication with ProcessManager
+    /// Set up communication with ProcessManager
     pub async fn setup_process_integration(&self, process_manager: Arc<Mutex<Option<ProcessManager>>>) -> Result<()> {
         // Create channel for process data communication
         let (sender, receiver) = mpsc::unbounded_channel::<(String, Vec<u8>)>();

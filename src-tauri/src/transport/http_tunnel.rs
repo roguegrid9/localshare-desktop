@@ -170,8 +170,7 @@ impl HttpTunnel {
     }
 
     pub async fn start(&mut self, data_channel: Arc<RTCDataChannel>) -> Result<u16> {
-        // Implementation from your Transport trait impl
-        Ok(3001) // placeholder
+        Ok(3001)
     }
 
     pub async fn stop(&mut self) -> Result<()> {

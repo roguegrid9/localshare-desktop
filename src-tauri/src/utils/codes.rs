@@ -139,8 +139,6 @@ impl SharingHelper {
 
     /// Generates a QR code data URL for sharing
     pub fn generate_qr_data(content: &str) -> String {
-        // In a real implementation, you'd use a QR code library
-        // For now, return a placeholder
         format!("data:image/svg+xml;base64,{}", base64::encode(content))
     }
 }

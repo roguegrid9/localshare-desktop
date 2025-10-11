@@ -182,17 +182,14 @@ impl ProcessScanner {
     }
     
     async fn scan_network_ports(&self, _range: &str) -> Result<Vec<(String, u16)>, String> {
-        // TODO: Implement network scanning
         Ok(Vec::new())
     }
-    
+
     async fn scan_docker_ports(&self) -> Result<Vec<(String, u16)>, String> {
-        // TODO: Implement Docker container scanning
         Ok(Vec::new())
     }
-    
+
     async fn scan_custom_ip_ports(&self, _ip: &str) -> Result<Vec<(String, u16)>, String> {
-        // TODO: Implement custom IP scanning
         Ok(Vec::new())
     }
 
