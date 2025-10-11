@@ -1,6 +1,6 @@
 [package]
 name = "roguegrid9"
-version = "0.1.4"
+version = "0.1.5"
 description = "RogueGrid9 Desktop Application"
 authors = ["Peter Kozikowski"]
 license = "MIT"
