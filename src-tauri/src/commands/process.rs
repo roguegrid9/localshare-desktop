@@ -509,47 +509,92 @@ pub async fn check_process_health(
 ) -> Result<ProcessHealthStatus, String> {
     log::info!("Checking process health on port {}", port);
 
-    // Use ss to check if port is listening and get PID
-    let output = std::process::Command::new("ss")
-        .args(&["-tlnp", &format!("sport = :{}", port)])
-        .output()
-        .map_err(|e| format!("Failed to run ss command: {}", e))?;
+    #[cfg(target_os = "windows")]
+    {
+        // Use netstat on Windows
+        let output = std::process::Command::new("netstat")
+            .args(&["-ano"])
+            .output()
+            .map_err(|e| format!("Failed to run netstat command: {}", e))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Parse output to find PID
-    // Format: LISTEN 0 128 *:25565 *:* users:(("java",pid=123456,fd=42))
-    for line in stdout.lines() {
-        if line.contains(&format!(":{}", port)) {
-            // Extract PID from users:(("processname",pid=XXXXX,fd=YY))
-            if let Some(users_part) = line.split("users:((").nth(1) {
-                if let Some(pid_part) = users_part.split("pid=").nth(1) {
-                    if let Some(pid_str) = pid_part.split(',').next() {
-                        if let Ok(pid) = pid_str.parse::<u32>() {
-                            log::info!("Port {} is listening, PID: {}", port, pid);
-                            return Ok(ProcessHealthStatus {
-                                healthy: true,
-                                current_pid: Some(pid),
-                            });
+        // Parse output to find PID
+        // Format: TCP    0.0.0.0:8000           0.0.0.0:0              LISTENING       12345
+        for line in stdout.lines() {
+            if line.contains("LISTENING") && line.contains(&format!(":{}", port)) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                // The PID is the last column
+                if let Some(pid_str) = parts.last() {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        log::info!("Port {} is listening, PID: {}", port, pid);
+                        return Ok(ProcessHealthStatus {
+                            healthy: true,
+                            current_pid: Some(pid),
+                        });
+                    }
+                }
+
+                // Port is listening but couldn't extract PID
+                log::warn!("Port {} is listening but couldn't extract PID", port);
+                return Ok(ProcessHealthStatus {
+                    healthy: true,
+                    current_pid: None,
+                });
+            }
+        }
+
+        log::info!("Port {} not listening", port);
+        Ok(ProcessHealthStatus {
+            healthy: false,
+            current_pid: None,
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use ss on Linux/Unix
+        let output = std::process::Command::new("ss")
+            .args(&["-tlnp", &format!("sport = :{}", port)])
+            .output()
+            .map_err(|e| format!("Failed to run ss command: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse output to find PID
+        // Format: LISTEN 0 128 *:25565 *:* users:(("java",pid=123456,fd=42))
+        for line in stdout.lines() {
+            if line.contains(&format!(":{}", port)) {
+                // Extract PID from users:(("processname",pid=XXXXX,fd=YY))
+                if let Some(users_part) = line.split("users:((").nth(1) {
+                    if let Some(pid_part) = users_part.split("pid=").nth(1) {
+                        if let Some(pid_str) = pid_part.split(',').next() {
+                            if let Ok(pid) = pid_str.parse::<u32>() {
+                                log::info!("Port {} is listening, PID: {}", port, pid);
+                                return Ok(ProcessHealthStatus {
+                                    healthy: true,
+                                    current_pid: Some(pid),
+                                });
+                            }
                         }
                     }
                 }
+
+                // Port is listening but couldn't extract PID (maybe permission issue)
+                log::warn!("Port {} is listening but couldn't extract PID", port);
+                return Ok(ProcessHealthStatus {
+                    healthy: true,
+                    current_pid: None,
+                });
             }
-
-            // Port is listening but couldn't extract PID (maybe permission issue)
-            log::warn!("Port {} is listening but couldn't extract PID", port);
-            return Ok(ProcessHealthStatus {
-                healthy: true,
-                current_pid: None,
-            });
         }
-    }
 
-    log::info!("Port {} not listening", port);
-    Ok(ProcessHealthStatus {
-        healthy: false,
-        current_pid: None,
-    })
+        log::info!("Port {} not listening", port);
+        Ok(ProcessHealthStatus {
+            healthy: false,
+            current_pid: None,
+        })
+    }
 }
 
 // Get all shared processes for a grid
