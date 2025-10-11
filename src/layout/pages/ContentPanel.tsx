@@ -350,6 +350,29 @@ export default function ContentPanel({
     };
   }, [loadActiveProcesses, loadSharedProcesses, actualGridId]);
 
+  // WebSocket listener for shared process status changes (updates status dots in real-time)
+  useEffect(() => {
+    const setupWSListener = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+
+      const unlisten = await listen('shared_process_status_changed', (event: any) => {
+        console.log('🔄 Shared process status changed via WebSocket', event.payload);
+        // Refresh shared processes to update status dots
+        if (actualGridId) {
+          loadSharedProcesses(actualGridId);
+        }
+      });
+
+      return unlisten;
+    };
+
+    const unlistenPromise = setupWSListener();
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [loadSharedProcesses, actualGridId]);
+
   // Manual refresh function for debugging
   const handleManualRefresh = useCallback(async () => {
     console.log('🔄 Manual refresh triggered by user');

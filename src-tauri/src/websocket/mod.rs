@@ -421,6 +421,16 @@ impl WebSocketManager {
                 }
             }
 
+            // Shared process status change events
+            "shared_process_status_changed" => {
+                log::info!("Shared process status changed: {:?}", message.payload);
+
+                // Emit to frontend so ContentPanel can update the status dots
+                if let Err(e) = app_handle.emit("shared_process_status_changed", &message.payload) {
+                    log::error!("Failed to emit shared process status changed event: {}", e);
+                }
+            }
+
             // Share notification handlers
             "share_notification" => {
                 if let Ok(payload) = serde_json::from_value::<ShareHostNotification>(message.payload) {
