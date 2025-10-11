@@ -694,6 +694,7 @@ impl ProcessScanner {
     // macOS implementations
     #[cfg(target_os = "macos")]
     async fn scan_macos_ports(&self) -> Result<Vec<(String, u16)>, String> {
+        log::info!("macOS: Running netstat to scan for ports");
         let output = AsyncCommand::new("netstat")
             .args(&["-an", "-p", "tcp"])
             .output()
@@ -701,18 +702,24 @@ impl ProcessScanner {
             .map_err(|e| format!("Failed to run netstat: {}", e))?;
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::error!("macOS: netstat command failed: {}", stderr);
             return Err("netstat command failed".to_string());
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut ports = Vec::new();
 
+        log::debug!("macOS: netstat output:\n{}", stdout);
+
         for line in stdout.lines() {
             if let Some((ip, port)) = self.parse_netstat_line_macos(line) {
+                log::debug!("macOS: Found port {} on {}", port, ip);
                 ports.push((ip, port));
             }
         }
 
+        log::info!("macOS: Found {} listening ports", ports.len());
         Ok(ports)
     }
 
@@ -728,14 +735,24 @@ impl ProcessScanner {
             return None;
         }
 
+        // macOS netstat uses periods as separators, not colons
+        // Format: 127.0.0.1.8080 or *.8080
         let local_address = parts[3];
-        if let Some(colon_pos) = local_address.rfind(':') {
-            let addr = &local_address[..colon_pos];
-            let port_str = &local_address[colon_pos + 1..];
+        if let Some(period_pos) = local_address.rfind('.') {
+            let addr = &local_address[..period_pos];
+            let port_str = &local_address[period_pos + 1..];
 
             if let Ok(port) = port_str.parse::<u16>() {
-                if addr == "127.0.0.1" || addr == "0.0.0.0" || addr == "*" {
-                    return Some((addr.to_string(), port));
+                // Normalize the address format
+                let normalized_addr = if addr == "*" {
+                    "0.0.0.0".to_string()
+                } else {
+                    addr.to_string()
+                };
+
+                // Accept localhost and wildcard addresses
+                if addr == "127.0.0.1" || addr == "0.0.0.0" || addr == "*" || addr == "localhost" {
+                    return Some((normalized_addr, port));
                 }
             }
         }
@@ -745,20 +762,29 @@ impl ProcessScanner {
 
     #[cfg(target_os = "macos")]
     async fn get_macos_pid_for_port(&self, port: u16) -> Result<u32, String> {
+        log::debug!("macOS: Looking up PID for port {}", port);
         let output = AsyncCommand::new("lsof")
             .args(&["-i", &format!(":{}", port), "-n", "-P"])
             .output()
             .await
             .map_err(|e| format!("Failed to run lsof: {}", e))?;
 
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("macOS: lsof failed for port {}: {}", port, stderr);
+        }
+
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+        log::trace!("macOS: lsof output for port {}:\n{}", port, stdout);
+
         for line in stdout.lines().skip(1) { // Skip header
             if let Some(pid) = self.extract_pid_from_lsof_line(line) {
+                log::debug!("macOS: Found PID {} for port {}", pid, port);
                 return Ok(pid);
             }
         }
 
+        log::warn!("macOS: No process found for port {}", port);
         Err(format!("No process found for port {}", port))
     }
 
@@ -773,6 +799,7 @@ impl ProcessScanner {
 
     #[cfg(target_os = "macos")]
     async fn extract_macos_process_info(&self, pid: u32) -> Result<ProcessInfo, String> {
+        log::debug!("macOS: Extracting process info for PID {}", pid);
         let output = AsyncCommand::new("ps")
             .args(&["-p", &pid.to_string(), "-o", "pid,comm,args"])
             .output()
@@ -781,20 +808,24 @@ impl ProcessScanner {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().collect();
-        
+
         if lines.len() < 2 {
+            log::warn!("macOS: Process {} not found", pid);
             return Err("Process not found".to_string());
         }
 
         let process_line = lines[1];
         let parts: Vec<&str> = process_line.splitn(3, ' ').collect();
-        
+
         if parts.len() < 3 {
+            log::warn!("macOS: Invalid process data for PID {}: {}", pid, process_line);
             return Err("Invalid process data".to_string());
         }
 
         let name = parts[1].to_string();
         let command = parts[2].to_string();
+
+        log::debug!("macOS: Found process info for PID {}: {}", pid, name);
 
         Ok(ProcessInfo {
             name,
