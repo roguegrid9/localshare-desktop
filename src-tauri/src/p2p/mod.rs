@@ -616,18 +616,16 @@ impl P2PManager {
         Ok(())
     }
 
-    // Handle incoming session invite (when someone wants to join our hosted grid)
+    // Handle incoming session invite (when someone wants to connect to our process)
     pub async fn handle_session_invite(&self, from_user_id: String, grid_id: String) -> Result<()> {
         log::info!("Received session invite from {} for grid {}", from_user_id, grid_id);
 
-        // Check if we're hosting this grid
-        let status = self.get_grid_status(&grid_id).await?;
-        let current_user_id = self.get_current_user_id().await?;
-        
-        if status.current_host_id != Some(current_user_id) {
-            log::warn!("Received invite for grid we're not hosting: {}", grid_id);
-            return Ok(());
-        }
+        // Note: We don't check grid host status here. Each process owner can accept
+        // connections to their own processes without needing to be the grid host.
+        // The backend has already authorized this connection by returning our user_id
+        // as the process owner to the guest.
+
+        log::info!("Accepting session invite for process connection (no grid-level hosting required)");
 
         // Accept the invite and create host connection
         self.accept_session_invite(from_user_id, grid_id).await

@@ -982,17 +982,10 @@ async fn resume_all_shared_process_heartbeats(
                             log::error!("Failed to resume heartbeat for process {}: {}", process.id, e);
                         }
 
-                        // Claim grid host to make process connectable
-                        {
-                            let p2p_state = state.p2p_manager.lock().await;
-                            if let Some(p2p_manager) = p2p_state.as_ref() {
-                                if let Err(e) = p2p_manager.claim_grid_host(grid.id.clone()).await {
-                                    log::error!("Failed to claim grid host {} for resumed process {}: {}", grid.id, process.id, e);
-                                } else {
-                                    log::info!("Claimed grid host {} for resumed process {}", grid.id, process.id);
-                                }
-                            }
-                        }
+                        // Note: We don't claim grid-level hosting here. Each process owner can
+                        // accept connections to their own process without needing to be the grid host.
+                        // Grid-level hosting is only needed for other features, not process-to-process connections.
+                        log::info!("Process {} ready to accept P2P connections without grid-level hosting", process.id);
                     }
                 }
             }
