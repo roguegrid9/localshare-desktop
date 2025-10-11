@@ -614,13 +614,22 @@ impl ProcessScanner {
             return None;
         }
 
+        // For TCP, check if it's LISTENING (parts[3] should be "LISTENING")
+        // For UDP, there's typically an asterisk (*:*) in foreign address (parts[2])
+        if protocol == "tcp" {
+            if parts.len() < 4 || parts[3] != "LISTENING" {
+                return None;
+            }
+        }
+
         let local_address = parts[1];
         if let Some(colon_pos) = local_address.rfind(':') {
             let addr = &local_address[..colon_pos];
             let port_str = &local_address[colon_pos + 1..];
 
             if let Ok(port) = port_str.parse::<u16>() {
-                if addr == "127.0.0.1" || addr == "0.0.0.0" {
+                // Accept more address types including wildcard and IPv6
+                if addr == "127.0.0.1" || addr == "0.0.0.0" || addr == "[::]" || addr == "[::1]" {
                     return Some((addr.to_string(), port));
                 }
             }
