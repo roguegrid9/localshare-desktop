@@ -981,6 +981,18 @@ async fn resume_all_shared_process_heartbeats(
                         if let Err(e) = start_process_heartbeat(process.id.clone(), grid.id.clone(), state.clone()).await {
                             log::error!("Failed to resume heartbeat for process {}: {}", process.id, e);
                         }
+
+                        // Auto-host the grid to make process connectable
+                        {
+                            let p2p_state = state.p2p_manager.lock().await;
+                            if let Some(p2p_manager) = p2p_state.as_ref() {
+                                if let Err(e) = p2p_manager.auto_host_grid(grid.id.clone()).await {
+                                    log::error!("Failed to auto-host grid {} for resumed process {}: {}", grid.id, process.id, e);
+                                } else {
+                                    log::info!("Auto-hosted grid {} for resumed process {}", grid.id, process.id);
+                                }
+                            }
+                        }
                     }
                 }
             }
