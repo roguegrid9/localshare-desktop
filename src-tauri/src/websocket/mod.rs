@@ -463,23 +463,10 @@ impl WebSocketManager {
                 }
 
                 if let Ok(payload) = serde_json::from_value::<ProcessConnectionPayload>(message.payload) {
-                    log::info!("Guest {} connecting to process {} in grid {}",
+                    log::info!("Guest {} connecting to process {} in grid {} - awaiting session invite",
                               payload.guest_user_id, payload.process_id, payload.grid_id);
-
-                    // Trigger P2P connection setup for this guest
-                    if let Some(p2p_handler) = p2p_handler {
-                        let p2p_state = p2p_handler.lock().await;
-                        if let Some(p2p_manager) = p2p_state.as_ref() {
-                            log::info!("Accepting guest connection from {}", payload.guest_user_id);
-                            if let Err(e) = p2p_manager.handle_session_invite(payload.guest_user_id, payload.grid_id).await {
-                                log::error!("Failed to handle guest connection: {}", e);
-                            }
-                        } else {
-                            log::warn!("P2P manager not initialized, cannot accept guest connection");
-                        }
-                    } else {
-                        log::warn!("P2P handler not set, cannot accept guest connection");
-                    }
+                    // Note: This is just a notification. The actual WebRTC session will be initiated
+                    // when we receive the session_invite message from the guest.
                 }
             }
 
