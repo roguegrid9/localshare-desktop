@@ -695,31 +695,53 @@ impl ProcessScanner {
     #[cfg(target_os = "macos")]
     async fn scan_macos_ports(&self) -> Result<Vec<(String, u16)>, String> {
         log::info!("macOS: Running netstat to scan for ports");
-        let output = AsyncCommand::new("netstat")
+        let mut ports = Vec::new();
+
+        // Scan TCP ports
+        let tcp_output = AsyncCommand::new("netstat")
             .args(&["-an", "-p", "tcp"])
             .output()
             .await
-            .map_err(|e| format!("Failed to run netstat: {}", e))?;
+            .map_err(|e| format!("Failed to run netstat for TCP: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::error!("macOS: netstat command failed: {}", stderr);
-            return Err("netstat command failed".to_string());
-        }
+        if tcp_output.status.success() {
+            let stdout = String::from_utf8_lossy(&tcp_output.stdout);
+            log::debug!("macOS: TCP netstat output:\n{}", stdout);
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut ports = Vec::new();
-
-        log::debug!("macOS: netstat output:\n{}", stdout);
-
-        for line in stdout.lines() {
-            if let Some((ip, port)) = self.parse_netstat_line_macos(line) {
-                log::debug!("macOS: Found port {} on {}", port, ip);
-                ports.push((ip, port));
+            for line in stdout.lines() {
+                if let Some((ip, port)) = self.parse_netstat_line_macos(line) {
+                    log::debug!("macOS: Found TCP port {} on {}", port, ip);
+                    ports.push((ip, port));
+                }
             }
+        } else {
+            let stderr = String::from_utf8_lossy(&tcp_output.stderr);
+            log::warn!("macOS: TCP netstat command failed: {}", stderr);
         }
 
-        log::info!("macOS: Found {} listening ports", ports.len());
+        // Scan UDP ports
+        let udp_output = AsyncCommand::new("netstat")
+            .args(&["-an", "-p", "udp"])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run netstat for UDP: {}", e))?;
+
+        if udp_output.status.success() {
+            let stdout = String::from_utf8_lossy(&udp_output.stdout);
+            log::debug!("macOS: UDP netstat output:\n{}", stdout);
+
+            for line in stdout.lines() {
+                if let Some((ip, port)) = self.parse_netstat_line_macos_udp(line) {
+                    log::debug!("macOS: Found UDP port {} on {}", port, ip);
+                    ports.push((ip, port));
+                }
+            }
+        } else {
+            let stderr = String::from_utf8_lossy(&udp_output.stderr);
+            log::warn!("macOS: UDP netstat command failed: {}", stderr);
+        }
+
+        log::info!("macOS: Found {} total listening ports", ports.len());
         Ok(ports)
     }
 
@@ -735,9 +757,18 @@ impl ProcessScanner {
             return None;
         }
 
+        // Check for LISTEN state (column 5)
+        let state = parts[5];
+        if state != "LISTEN" {
+            return None;
+        }
+
         // macOS netstat uses periods as separators, not colons
-        // Format: 127.0.0.1.8080 or *.8080
+        // Format: 127.0.0.1.8080 or *.8080 or ::1.8080
         let local_address = parts[3];
+
+        // Handle IPv6 addresses (e.g., "::1.8080" or "fe80::1.8080")
+        // For IPv6, we need to find the LAST period (the port separator)
         if let Some(period_pos) = local_address.rfind('.') {
             let addr = &local_address[..period_pos];
             let port_str = &local_address[period_pos + 1..];
@@ -746,14 +777,55 @@ impl ProcessScanner {
                 // Normalize the address format
                 let normalized_addr = if addr == "*" {
                     "0.0.0.0".to_string()
+                } else if addr == "::1" || addr.starts_with("::") {
+                    // IPv6 localhost
+                    "::1".to_string()
                 } else {
                     addr.to_string()
                 };
 
-                // Accept localhost and wildcard addresses
-                if addr == "127.0.0.1" || addr == "0.0.0.0" || addr == "*" || addr == "localhost" {
-                    return Some((normalized_addr, port));
-                }
+                // Accept all addresses (localhost, wildcard, specific interfaces, IPv6)
+                // This includes: 127.0.0.1, 0.0.0.0, *, ::1, ::, localhost, and specific IPs
+                return Some((normalized_addr, port));
+            }
+        }
+
+        None
+    }
+
+    #[cfg(target_os = "macos")]
+    fn parse_netstat_line_macos_udp(&self, line: &str) -> Option<(String, u16)> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // UDP has fewer columns (no state), typically 5 columns
+        if parts.len() < 5 {
+            return None;
+        }
+
+        let protocol = parts[0].to_lowercase();
+        if protocol != "udp" && protocol != "udp4" && protocol != "udp6" {
+            return None;
+        }
+
+        // For UDP, local address is in column 3
+        let local_address = parts[3];
+
+        // Handle IPv6 addresses (e.g., "::1.8080" or "fe80::1.8080")
+        if let Some(period_pos) = local_address.rfind('.') {
+            let addr = &local_address[..period_pos];
+            let port_str = &local_address[period_pos + 1..];
+
+            if let Ok(port) = port_str.parse::<u16>() {
+                // Normalize the address format
+                let normalized_addr = if addr == "*" {
+                    "0.0.0.0".to_string()
+                } else if addr == "::1" || addr.starts_with("::") {
+                    "::1".to_string()
+                } else {
+                    addr.to_string()
+                };
+
+                // Accept all addresses for UDP
+                return Some((normalized_addr, port));
             }
         }
 
