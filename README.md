@@ -6,7 +6,7 @@
 
 > **Open Beta Now Available!** Collaborative computing platform with P2P process sharing - no cloud required.
 
-🚧 **This is beta software** - expect bugs, breaking changes, and rough edges. [Report issues](https://github.com/roguegrid9/roguegrid-desktop/issues) or [get help on Discord](https://discord.gg/roguegrid9).
+🚧 **This is beta software** - expect bugs, breaking changes, and rough edges. [Report issues](https://github.com/roguegrid9/roguegrid-desktop/issues) or [get help on Discord](https://discord.gg/7cs9Uh32).
 
 ---
 
@@ -51,7 +51,7 @@ RogueGrid9 lets teams share running processes, terminals, and applications direc
 
 ### Download Latest Release
 
-[**📥 Download Beta v0.1.4**](https://github.com/roguegrid9/roguegrid-desktop/releases/latest)
+[**📥 Download Beta v0.1.5**](https://github.com/roguegrid9/roguegrid-desktop/releases/latest)
 
 **Choose your platform:**
 - 🪟 **Windows 10/11**: `RogueGrid9_0.1.5_x64-setup.exe`
