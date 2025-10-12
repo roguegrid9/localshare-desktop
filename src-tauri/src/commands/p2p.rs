@@ -451,36 +451,33 @@ struct NatDetectionResult {
 }
 
 async fn detect_nat_type() -> Result<NatDetectionResult, Box<dyn std::error::Error>> {
-    use webrtc::peer_connection::configuration::RTCConfiguration;
-    use webrtc::api::APIBuilder;
-    
-    // Create a test peer connection with STUN servers
-    let config = RTCConfiguration {
-        ice_servers: vec![
-            webrtc::ice_transport::ice_server::RTCIceServer {
-                urls: vec!["stun:stun.l.google.com:19302".to_string()],
-                ..Default::default()
-            },
-        ],
-        ..Default::default()
-    };
-    
-    let api = APIBuilder::new().build();
-    let peer_connection = api.new_peer_connection(config).await?;
-    
-    // Gather ICE candidates to analyze NAT type
-    let peer_connection_arc = std::sync::Arc::new(peer_connection);
-    let (nat_type, needs_relay) = analyze_ice_candidates(&peer_connection_arc).await?;    
-    
+    log::info!("Starting NAT type detection with multi-STUN port comparison");
+
+    // Test against 3 different STUN servers to detect port allocation pattern
+    let stun_servers = vec![
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun.cloudflare.com:3478",
+    ];
+
+    // Gather srflx candidates from multiple STUN servers in parallel
+    let candidate_sets = gather_candidates_from_multiple_stun(stun_servers).await?;
+
+    // Analyze port allocation pattern to determine NAT type
+    let (nat_type, needs_relay) = analyze_port_allocation(candidate_sets)?;
+
     let quality = match nat_type.as_str() {
         "Open Internet" => "excellent",
-        "Full Cone NAT" => "good", 
-        "Restricted NAT" => "fair",
-        "Port Restricted NAT" => "poor",
+        "Cone NAT" => "good",
+        "Unknown NAT" => "fair",  // Conservative - might need relay
         "Symmetric NAT" => "needs_relay",
+        "No Connectivity" => "none",
         _ => "unknown",
     };
-    
+
+    log::info!("NAT detection complete: type={}, needs_relay={}, quality={}",
+               nat_type, needs_relay, quality);
+
     Ok(NatDetectionResult {
         nat_type,
         needs_relay,
@@ -488,13 +485,88 @@ async fn detect_nat_type() -> Result<NatDetectionResult, Box<dyn std::error::Err
     })
 }
 
-async fn analyze_ice_candidates(pc: &std::sync::Arc<webrtc::peer_connection::RTCPeerConnection>) -> Result<(String, bool), Box<dyn std::error::Error>> {
+/// Gather ICE candidates from multiple STUN servers in parallel
+async fn gather_candidates_from_multiple_stun(
+    stun_servers: Vec<&str>
+) -> Result<Vec<Vec<String>>, Box<dyn std::error::Error>> {
+    use futures_util::future::join_all;
+
+    log::info!("Testing {} STUN servers for NAT detection", stun_servers.len());
+
+    // Create tasks to gather candidates from each STUN server
+    let mut tasks = Vec::new();
+
+    for stun_url in stun_servers {
+        let stun_url = stun_url.to_string();
+        let task = tokio::spawn(async move {
+            // 5 second timeout per STUN server
+            match tokio::time::timeout(
+                tokio::time::Duration::from_secs(5),
+                gather_candidates_from_single_stun(&stun_url)
+            ).await {
+                Ok(Ok(candidates)) => {
+                    log::info!("STUN server {} returned {} candidates", stun_url, candidates.len());
+                    Some(candidates)
+                }
+                Ok(Err(e)) => {
+                    log::warn!("Failed to gather from STUN {}: {}", stun_url, e);
+                    None
+                }
+                Err(_) => {
+                    log::warn!("Timeout gathering from STUN {}", stun_url);
+                    None
+                }
+            }
+        });
+        tasks.push(task);
+    }
+
+    // Wait for all tasks to complete
+    let results = join_all(tasks).await;
+
+    // Collect successful results
+    let candidate_sets: Vec<Vec<String>> = results
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .filter_map(|opt| opt)
+        .collect();
+
+    if candidate_sets.is_empty() {
+        log::error!("No STUN servers responded successfully");
+        return Err("Failed to contact any STUN servers".into());
+    }
+
+    log::info!("Successfully gathered candidates from {} STUN servers", candidate_sets.len());
+    Ok(candidate_sets)
+}
+
+/// Gather ICE candidates from a single STUN server
+async fn gather_candidates_from_single_stun(
+    stun_url: &str
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    use webrtc::peer_connection::configuration::RTCConfiguration;
+    use webrtc::api::APIBuilder;
     use std::sync::{Arc, Mutex};
-    
+
+    // Create peer connection with this specific STUN server
+    let config = RTCConfiguration {
+        ice_servers: vec![
+            webrtc::ice_transport::ice_server::RTCIceServer {
+                urls: vec![stun_url.to_string()],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    let api = APIBuilder::new().build();
+    let peer_connection = api.new_peer_connection(config).await?;
+    let pc = std::sync::Arc::new(peer_connection);
+
     // Store candidates as they're gathered
     let candidates = Arc::new(Mutex::new(Vec::<String>::new()));
     let candidates_clone = candidates.clone();
-    
+
     // Set up ICE candidate callback
     pc.on_ice_candidate(Box::new(move |candidate| {
         let candidates = candidates_clone.clone();
@@ -507,58 +579,141 @@ async fn analyze_ice_candidates(pc: &std::sync::Arc<webrtc::peer_connection::RTC
             }
         })
     }));
-    
+
     // Create a data channel to trigger ICE gathering
-    let _dc = pc.create_data_channel("test", None).await?;
-    
+    let _dc = pc.create_data_channel("nat_test", None).await?;
+
     // Create an offer to start ICE gathering
     let offer = pc.create_offer(None).await?;
     pc.set_local_description(offer).await?;
-    
-    // Wait for ICE gathering to complete
+
+    // Wait for ICE gathering to complete (max 3 seconds)
     let mut attempts = 0;
-    let max_attempts = 30; // 3 seconds total
-    
+    let max_attempts = 30; // 100ms intervals = 3 seconds
+
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         attempts += 1;
-        
+
         let candidate_count = {
             let cands = candidates.lock().unwrap();
             cands.len()
         };
-        
+
         // If we have candidates or timed out, proceed
         if candidate_count > 0 || attempts >= max_attempts {
             break;
         }
     }
-    
-    // Analyze the gathered candidates
+
+    // Get gathered candidates
     let gathered_candidates = {
         let cands = candidates.lock().unwrap();
         cands.clone()
     };
-    
-    let has_host = gathered_candidates.iter().any(|c| c.contains("host"));
-    let has_srflx = gathered_candidates.iter().any(|c| c.contains("srflx"));
-    let has_relay = gathered_candidates.iter().any(|c| c.contains("relay"));
-    
-    log::info!("ICE candidates gathered: {} total, host: {}, srflx: {}, relay: {}", 
-               gathered_candidates.len(), has_host, has_srflx, has_relay);
-    
-    let (nat_type, needs_relay) = match (has_host, has_srflx, has_relay) {
-        (true, false, _) => ("Open Internet".to_string(), false),
-        (true, true, _) => ("Full Cone NAT".to_string(), false),
-        (false, true, _) => ("Restricted NAT".to_string(), false),
-        (false, false, true) => ("Symmetric NAT".to_string(), true),
-        (false, false, false) => ("No Connectivity".to_string(), true),
-        _ => ("Unknown NAT".to_string(), false),
-    };
-    
+
+    // Clean up
     pc.close().await?;
-    
-    Ok((nat_type, needs_relay))
+
+    Ok(gathered_candidates)
+}
+
+/// Analyze port allocation pattern to determine NAT type
+fn analyze_port_allocation(
+    candidate_sets: Vec<Vec<String>>
+) -> Result<(String, bool), Box<dyn std::error::Error>> {
+    log::info!("Analyzing port allocation from {} STUN servers", candidate_sets.len());
+
+    // Extract srflx (server reflexive) ports from each candidate set
+    let external_ports: Vec<u16> = extract_srflx_ports(candidate_sets.clone());
+
+    log::info!("Extracted {} external ports: {:?}", external_ports.len(), external_ports);
+
+    // Check for any connectivity
+    if external_ports.is_empty() {
+        // No srflx candidates means we couldn't reach any STUN server
+        // Check if we at least have host candidates
+        let has_any_host = candidate_sets.iter().any(|set| {
+            set.iter().any(|c| c.contains("typ host"))
+        });
+
+        if has_any_host {
+            log::warn!("No external connectivity - only host candidates available");
+            return Ok(("No External Connectivity".to_string(), true));
+        } else {
+            log::error!("No connectivity at all - no candidates gathered");
+            return Ok(("No Connectivity".to_string(), true));
+        }
+    }
+
+    // If we only got one response, be conservative
+    if external_ports.len() == 1 {
+        log::warn!("Only one STUN server responded - cannot reliably determine NAT type");
+        return Ok(("Unknown NAT".to_string(), true)); // Conservative - assume needs relay
+    }
+
+    // Compare ports to detect NAT behavior
+    let first_port = external_ports[0];
+    let all_same_port = external_ports.iter().all(|&p| p == first_port);
+
+    if all_same_port {
+        // Same external port for all STUN servers = Cone NAT (any variant)
+        // This means P2P should work with STUN assistance
+        log::info!("All external ports are the same ({}): Cone NAT detected", first_port);
+        Ok(("Cone NAT".to_string(), false))
+    } else {
+        // Different external ports = Symmetric NAT
+        // This requires TURN relay for reliable connectivity
+        log::warn!(
+            "Different external ports detected ({}): Symmetric NAT - TURN required",
+            external_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+        );
+        Ok(("Symmetric NAT".to_string(), true))
+    }
+}
+
+/// Extract server-reflexive (srflx) ports from candidate sets
+fn extract_srflx_ports(candidate_sets: Vec<Vec<String>>) -> Vec<u16> {
+    let mut ports = Vec::new();
+
+    for (idx, candidates) in candidate_sets.iter().enumerate() {
+        // Find first srflx candidate in this set
+        for candidate in candidates {
+            if candidate.contains("typ srflx") {
+                if let Some(port) = parse_candidate_port(candidate) {
+                    log::debug!("STUN server {} returned external port: {}", idx, port);
+                    ports.push(port);
+                    break; // Only take one port per STUN server
+                }
+            }
+        }
+    }
+
+    ports
+}
+
+/// Parse port from ICE candidate string
+/// Format: "candidate:foundation component protocol priority ip port typ type ..."
+/// Example: "candidate:1 1 UDP 2130706431 74.105.113.48 54321 typ srflx raddr 192.168.1.1 rport 54321"
+fn parse_candidate_port(candidate: &str) -> Option<u16> {
+    let parts: Vec<&str> = candidate.split_whitespace().collect();
+
+    // ICE candidate format has port at index 5 (0-indexed)
+    if parts.len() >= 7 {
+        // Find "typ" keyword to verify structure
+        if let Some(typ_idx) = parts.iter().position(|&p| p == "typ") {
+            if typ_idx >= 2 {
+                // Port should be 2 positions before "typ"
+                let port_idx = typ_idx - 1;
+                if let Ok(port) = parts[port_idx].parse::<u16>() {
+                    return Some(port);
+                }
+            }
+        }
+    }
+
+    log::warn!("Failed to parse port from candidate: {}", candidate);
+    None
 }
 
 async fn test_stun_connectivity() -> bool {
