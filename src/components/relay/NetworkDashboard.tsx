@@ -19,8 +19,11 @@ import {
   Check,
   RefreshCw,
   Link as LinkIcon,
-  Zap
+  Zap,
+  Shield,
+  ShieldAlert
 } from 'lucide-react';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 
 interface FRPStatus {
   connected: boolean;
@@ -36,8 +39,6 @@ interface RelaySubscription {
   bandwidth_used: number;
   bandwidth_limit: number;
   max_connections: number;
-  is_trial: boolean;
-  trial_ends_at?: string;
 }
 
 interface Tunnel {
@@ -67,6 +68,7 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
   const [refreshing, setRefreshing] = useState(false);
   const [hasSubscription, setHasSubscription] = useState<boolean | null>(null); // null = loading, true/false = has/no subscription
   const [checkingSubscription, setCheckingSubscription] = useState(true);
+  const { networkStatus, loading: networkLoading, checkNetworkStatus } = useNetworkStatus();
 
   useEffect(() => {
     checkSubscriptionStatus();
@@ -261,29 +263,85 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Network Status Card */}
             <div className="rounded-xl border border-white/10 bg-[#111319] p-6">
-              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                <Globe className="w-6 h-6 text-blue-400" />
-                Your Network Status
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Globe className="w-6 h-6 text-blue-400" />
+                  Your Network Status
+                </h2>
+                <button
+                  onClick={checkNetworkStatus}
+                  disabled={networkLoading}
+                  className="rounded-lg p-2 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-50"
+                  title="Refresh network status"
+                >
+                  <RefreshCw className={`w-4 h-4 ${networkLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
               <div className="space-y-4">
-                <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                  <Wifi className="w-6 h-6 text-blue-400 flex-shrink-0 mt-1" />
+                {/* Connection Quality Status */}
+                <div className={`flex items-start gap-3 p-4 rounded-lg border ${
+                  networkStatus?.connection_quality === "excellent" ? "bg-green-500/10 border-green-500/20" :
+                  networkStatus?.connection_quality === "good" ? "bg-blue-500/10 border-blue-500/20" :
+                  networkStatus?.connection_quality === "fair" ? "bg-yellow-500/10 border-yellow-500/20" :
+                  "bg-red-500/10 border-red-500/20"
+                }`}>
+                  {networkStatus?.needs_relay ? (
+                    <ShieldAlert className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
+                  ) : networkStatus?.stun_available ? (
+                    <Shield className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
+                  ) : (
+                    <WifiOff className="w-6 h-6 text-gray-400 flex-shrink-0 mt-1" />
+                  )}
                   <div className="flex-1">
-                    <p className="text-white font-medium mb-1">Direct P2P Connection</p>
-                    <p className="text-white/60 text-sm">
-                      Your network supports direct peer-to-peer connections. This works for most cases (70-85% success rate) and is completely free.
+                    <p className="text-white font-medium mb-1">
+                      {networkStatus?.connection_quality === "excellent" ? "Excellent Connection" :
+                       networkStatus?.connection_quality === "good" ? "Good Connection" :
+                       networkStatus?.connection_quality === "fair" ? "Fair Connection" :
+                       networkStatus?.needs_relay ? "Limited Connection" :
+                       "Checking Connection..."}
                     </p>
+                    <p className="text-white/60 text-sm mb-2">
+                      {networkStatus?.needs_relay ? (
+                        "Your network has restrictive NAT/firewall. Direct P2P connections may not work reliably."
+                      ) : networkStatus?.connection_quality === "excellent" ? (
+                        "Your network supports direct peer-to-peer connections perfectly. No relay needed."
+                      ) : networkStatus?.connection_quality === "good" ? (
+                        "Your network supports direct P2P connections with good reliability."
+                      ) : (
+                        "Your network may have some connectivity restrictions."
+                      )}
+                    </p>
+                    {networkStatus && (
+                      <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${networkStatus.stun_available ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <span className="text-white/70">STUN {networkStatus.stun_available ? 'Available' : 'Unavailable'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${networkStatus.turn_available ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <span className="text-white/70">TURN {networkStatus.turn_available ? 'Available' : 'Unavailable'}</span>
+                        </div>
+                        <div className="col-span-2 flex items-center gap-1.5">
+                          <span className="text-white/50">NAT Type: </span>
+                          <span className="text-white/70 font-mono">{networkStatus.nat_type}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-start gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                  <AlertCircle className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <p className="text-white font-medium mb-1">When P2P Fails</p>
-                    <p className="text-white/60 text-sm">
-                      Connections may fail due to restrictive NATs, firewalls, or corporate networks. Upgrade to Pro for guaranteed connectivity via FRP relay servers.
-                    </p>
+
+                {/* Relay Recommendation */}
+                {networkStatus?.needs_relay && (
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                    <AlertCircle className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-1" />
+                    <div className="flex-1">
+                      <p className="text-white font-medium mb-1">Relay Recommended</p>
+                      <p className="text-white/60 text-sm">
+                        Your network requires relay servers for reliable connectivity. Upgrade to Pro for guaranteed connections via FRP relay servers.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -349,7 +407,7 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
                   <span className="text-3xl font-bold text-white">$3.99</span>
                   <span className="text-white/60">/month</span>
                 </div>
-                <p className="text-white/60 text-sm">7-day free trial • Cancel anytime</p>
+                <p className="text-white/60 text-sm">Cancel anytime</p>
               </div>
 
               <button
@@ -357,7 +415,7 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
                 className="w-full py-3 px-6 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] hover:from-[#FF9A10] hover:to-[#FF4D10] text-white font-medium rounded-lg transition-all flex items-center justify-center gap-2"
               >
                 <Zap className="w-5 h-5" />
-                Start Free Trial
+                Subscribe Now
               </button>
             </div>
 
@@ -365,8 +423,8 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1 text-sm text-blue-300">
-                <p className="font-medium mb-1">No credit card required for trial</p>
-                <p className="text-blue-300/80">Try all Pro features free for 7 days. Cancel anytime before the trial ends to avoid charges.</p>
+                <p className="font-medium mb-1">Flexible Subscription</p>
+                <p className="text-blue-300/80">Get access to all Pro features. Cancel anytime with no long-term commitment.</p>
               </div>
             </div>
           </div>
@@ -609,15 +667,6 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
                       </span>
                     </div>
                   </div>
-
-                  {subscription.is_trial && subscription.trial_ends_at && (
-                    <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                      <p className="text-sm text-yellow-400 flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        Trial ends: {new Date(subscription.trial_ends_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -628,15 +677,15 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
                 <div className="w-16 h-16 rounded-xl bg-blue-500/20 flex items-center justify-center mx-auto mb-4">
                   <Zap className="w-8 h-8 text-blue-400" />
                 </div>
-                <h3 className="text-xl font-semibold text-white mb-2">Start Your Free Trial</h3>
+                <h3 className="text-xl font-semibold text-white mb-2">Subscribe to Pro</h3>
                 <p className="text-white/80 mb-6 max-w-md mx-auto">
-                  Get 7 days free with 3 concurrent connections, 250GB bandwidth, and unlimited tunnels
+                  Get 40 concurrent connections, 250GB bandwidth, and unlimited tunnels
                 </p>
                 <button
                   onClick={onStartTrial}
                   className="px-6 py-3 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] hover:opacity-90 text-white rounded-lg font-medium transition-opacity"
                 >
-                  Start Free Trial
+                  Subscribe Now
                 </button>
               </div>
             )}
@@ -871,7 +920,7 @@ export function NetworkDashboard({ token, onClose, onCreateTunnel, onStartTrial 
                     onClick={onStartTrial}
                     className="px-4 py-2 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] hover:opacity-90 text-white rounded-lg font-medium transition-opacity"
                   >
-                    Start Free Trial
+                    Subscribe Now
                   </button>
                 )}
               </div>
