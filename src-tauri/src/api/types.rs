@@ -1282,3 +1282,63 @@ pub struct PaymentIntentResponse {
     pub status: String,
 }
 
+// ===== FRP RELAY & TUNNEL TYPES =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelaySubscription {
+    pub id: String,
+    pub status: String,
+    pub plan_type: String,
+    pub bandwidth_used: i64,
+    pub bandwidth_limit: i64,
+    pub max_connections: i32,
+    pub is_trial: bool,
+    pub trial_ends_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FRPCredentials {
+    pub server_addr: String,
+    pub server_port: u16,
+    pub auth_token: String,
+    pub user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCredentialsResponse {
+    pub servers: Vec<FRPCredentials>,
+    pub subscription: RelaySubscription,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tunnel {
+    pub id: String,
+    pub subdomain: String,
+    pub local_port: u16,
+    pub protocol: String,
+    pub status: String,
+    pub bandwidth_used: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubdomainAvailability {
+    pub subdomain: String,
+    pub available: bool,
+    pub reason: Option<String>,
+    pub full_domain: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartTrialRequest {
+    pub location: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTunnelRequest {
+    pub subdomain: String,
+    pub local_port: u16,
+    pub protocol: String,
+}
+
