@@ -913,3 +913,38 @@ pub async fn auto_host_grid(
         Err("P2P service not initialized".to_string())
     }
 }
+
+// Report NAT status to the server
+#[tauri::command]
+pub async fn report_nat_status(
+    nat_type: String,
+    needs_relay: bool,
+    connection_quality: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    log::info!("Reporting NAT status: {} (needs_relay: {})", nat_type, needs_relay);
+
+    // Get auth token
+    let session = match crate::auth::storage::get_user_session().await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            log::warn!("No active session, skipping NAT status report");
+            return Ok(());
+        }
+        Err(e) => {
+            log::warn!("Failed to get user session, skipping NAT status report: {}", e);
+            return Ok(());
+        }
+    };
+
+    let token = session.token;
+
+    // Get API client
+    let api_client = crate::api::client::CoordinatorClient::new();
+
+    // Report NAT status
+    api_client
+        .report_nat_status(&token, nat_type, needs_relay, connection_quality)
+        .await
+        .map_err(|e| format!("Failed to report NAT status: {}", e))
+}

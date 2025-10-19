@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useToast } from '../components/ui/Toaster';
+import { toast } from '../components/ui/sonner';
 import { useP2P } from '../context/P2PProvider';
 import type {
   MediaSessionInfo,
@@ -21,7 +21,6 @@ export function useWebRTCMedia(sessionId?: string) {
   const [lastError, setLastError] = useState<string | undefined>();
   
   const { sessions } = useP2P();
-  const toast = useToast();
   
   // Track references for managing media streams
   const localTracksRef = useRef<Map<string, MediaStreamTrack>>(new Map());
@@ -59,12 +58,12 @@ export function useWebRTCMedia(sessionId?: string) {
       // This would extend your existing P2P connection to handle media
       await invoke('initialize_media_session', { sessionId });
       
-      toast('Media session initialized', 'success');
+      toast.success('Media session initialized');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to initialize media session:', error);
       setLastError(message);
-      toast(`Failed to initialize media: ${message}`, 'error');
+      toast.error(`Failed to initialize media: ${message}`);
     }
   }, [currentSession, toast]);
   
@@ -104,11 +103,11 @@ export function useWebRTCMedia(sessionId?: string) {
         };
       });
       
-      toast(`${kind === 'audio' ? 'Microphone' : 'Camera'} added to call`, 'success');
+      toast.success(`${kind === 'audio' ? 'Microphone' : 'Camera'} added to call`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error(`Failed to add ${kind} track:`, error);
-      toast(`Failed to add ${kind === 'audio' ? 'microphone' : 'camera'}: ${message}`, 'error');
+      toast.error(`Failed to add ${kind === 'audio' ? 'microphone' : 'camera'}: ${message}`);
     }
   }, [mediaSession, toast]);
   
@@ -153,12 +152,12 @@ export function useWebRTCMedia(sessionId?: string) {
           };
         });
         
-        toast(`${kind === 'audio' ? 'Microphone' : 'Camera'} removed from call`, 'info');
+        toast.info(`${kind === 'audio' ? 'Microphone' : 'Camera'} removed from call`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error(`Failed to remove ${kind} track:`, error);
-      toast(`Failed to remove ${kind === 'audio' ? 'microphone' : 'camera'}: ${message}`, 'error');
+      toast.error(`Failed to remove ${kind === 'audio' ? 'microphone' : 'camera'}: ${message}`);
     }
   }, [mediaSession, toast]);
   
@@ -259,7 +258,7 @@ export function useWebRTCMedia(sessionId?: string) {
           }
         });
         
-        toast(isScreenShare ? 'Screen sharing started' : 'Camera switched', 'success');
+        toast.success(isScreenShare ? 'Screen sharing started' : 'Camera switched');
       } else {
         // No existing video track, just add the new one
         await addLocalTrack(newTrack, newStream, 'video');
@@ -267,7 +266,7 @@ export function useWebRTCMedia(sessionId?: string) {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to replace video track:', error);
-      toast(`Failed to update video: ${message}`, 'error');
+      toast.error(`Failed to update video: ${message}`);
     }
   }, [mediaSession, addLocalTrack, toast]);
   
@@ -364,7 +363,7 @@ export function useWebRTCMedia(sessionId?: string) {
           
           if (eventSessionId === sessionId) {
             setLastError(message);
-            toast(`Media error: ${message}`, 'error');
+            toast.error(`Media error: ${message}`);
           }
         });
         unsubscribers.push(unsubMediaError);
@@ -376,7 +375,7 @@ export function useWebRTCMedia(sessionId?: string) {
           if (eventSessionId === sessionId) {
             setMediaConnected(connected);
             if (connected) {
-              toast('Media connection established', 'success');
+              toast.success('Media connection established');
             }
           }
         });

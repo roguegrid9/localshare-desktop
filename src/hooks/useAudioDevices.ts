@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useToast } from '../components/ui/Toaster';
+import { toast } from '../components/ui/sonner';
 import type {
   TauriAudioDevice,
   TauriAudioSettings,
@@ -47,7 +47,6 @@ export function useAudioDevices() {
   const levelMonitorRef = useRef<NodeJS.Timeout | null>(null);
   const unlistenErrorRef = useRef<(() => void) | null>(null);
   
-  const toast = useToast();
 
   // Check if Tauri media backend is available
   const checkBackendStatus = useCallback(async (): Promise<boolean> => {
@@ -91,7 +90,7 @@ export function useAudioDevices() {
       return backendDevices;
     } catch (error) {
       console.error('Failed to get audio devices:', error);
-      toast('Failed to get audio devices', 'error');
+      toast.error('Failed to get audio devices');
       return [];
     } finally {
       setIsLoading(false);
@@ -112,12 +111,13 @@ export function useAudioDevices() {
         ...prev,
         [deviceId]: result
       }));
-      
-      toast(
-        result ? 'Device test successful' : 'Device test failed',
-        result ? 'success' : 'error'
-      );
-      
+
+      if (result) {
+        toast.success('Device test successful');
+      } else {
+        toast.error('Device test failed');
+      }
+
       return result;
     } catch (error) {
       console.error(`Failed to test device ${deviceId}:`, error);
@@ -125,7 +125,7 @@ export function useAudioDevices() {
         ...prev,
         [deviceId]: false
       }));
-      toast('Device test failed', 'error');
+      toast.error('Device test failed');
       return false;
     }
   }, [audioStatus.available, toast]);
@@ -157,10 +157,10 @@ export function useAudioDevices() {
       startAudioLevelMonitoring();
       
       console.log('Audio capture started:', captureSettings);
-      toast('Audio capture started', 'success');
+      toast.success('Audio capture started');
     } catch (error) {
       console.error('Failed to start audio capture:', error);
-      toast('Failed to start audio capture', 'error');
+      toast.error('Failed to start audio capture');
       throw error;
     }
   }, [audioStatus.available, currentSettings, toast]);
@@ -182,10 +182,10 @@ export function useAudioDevices() {
       setAudioLevel({ level: 0, peak: 0, speaking: false });
       
       console.log('Audio capture stopped');
-      toast('Audio capture stopped', 'info');
+      toast.info('Audio capture stopped');
     } catch (error) {
       console.error('Failed to stop audio capture:', error);
-      toast('Failed to stop audio capture', 'error');
+      toast.error('Failed to stop audio capture');
     }
   }, [audioStatus.available, captureActive, toast]);
 
@@ -198,10 +198,10 @@ export function useAudioDevices() {
     try {
       await invoke('mute_audio', { muted });
       console.log(`Audio ${muted ? 'muted' : 'unmuted'}`);
-      toast(`Audio ${muted ? 'muted' : 'unmuted'}`, 'info');
+      toast.info(`Audio ${muted ? 'muted' : 'unmuted'}`);
     } catch (error) {
       console.error('Failed to toggle mute:', error);
-      toast('Failed to toggle mute', 'error');
+      toast.error('Failed to toggle mute');
       throw error;
     }
   }, [audioStatus.available, toast]);
@@ -224,10 +224,10 @@ export function useAudioDevices() {
       }));
       
       console.log(`Audio volume set to ${clampedVolume}`);
-      toast(`Volume: ${Math.round(clampedVolume * 100)}%`, 'info');
+      toast.info(`Volume: ${Math.round(clampedVolume * 100)}%`);
     } catch (error) {
       console.error('Failed to set volume:', error);
-      toast('Failed to set volume', 'error');
+      toast.error('Failed to set volume');
       throw error;
     }
   }, [audioStatus.available, toast]);
@@ -245,10 +245,10 @@ export function useAudioDevices() {
       setCurrentSettings(settings);
       
       console.log('Audio settings saved:', settings);
-      toast('Audio settings saved', 'success');
+      toast.success('Audio settings saved');
     } catch (error) {
       console.error('Failed to save audio settings:', error);
-      toast('Failed to save audio settings', 'error');
+      toast.error('Failed to save audio settings');
       throw error;
     }
   }, [audioStatus.available, toast]);
@@ -279,10 +279,10 @@ export function useAudioDevices() {
 
   // Get detailed audio level
   const getDetailedAudioLevel = useCallback(async (): Promise<TauriAudioLevel> => {
-    if (!audioStatus.available || !captureActive) {
+    if (!audioStatus.available) {
       return { level: 0, peak: 0, speaking: false };
     }
-    
+
     try {
       const level = await invoke<TauriAudioLevel>('get_detailed_audio_level');
       return level;
@@ -290,16 +290,18 @@ export function useAudioDevices() {
       // Silently fail - audio level is not critical
       return { level: 0, peak: 0, speaking: false };
     }
-  }, [audioStatus.available, captureActive]);
+  }, [audioStatus.available]);
 
   // Start real-time audio level monitoring
   const startAudioLevelMonitoring = useCallback(() => {
     if (levelMonitorRef.current) {
       return; // Already monitoring
     }
-    
+
     levelMonitorRef.current = setInterval(async () => {
-      if (audioStatus.available && captureActive) {
+      // Don't check captureActive here - it creates a closure issue
+      // The monitoring is only started when capture is active anyway
+      if (audioStatus.available) {
         try {
           const level = await getDetailedAudioLevel();
           setAudioLevel(level);
@@ -308,9 +310,9 @@ export function useAudioDevices() {
         }
       }
     }, 100); // 10 times per second
-    
+
     console.log('Started audio level monitoring');
-  }, [audioStatus.available, captureActive, getDetailedAudioLevel]);
+  }, [audioStatus.available, getDetailedAudioLevel]);
 
   // Stop audio level monitoring
   const stopAudioLevelMonitoring = useCallback(() => {
@@ -365,7 +367,7 @@ export function useAudioDevices() {
           setCaptureActive(false);
           stopAudioLevelMonitoring();
           
-          toast(`Audio error: ${event.payload.suggestion}`, 'error');
+          toast.error(`Audio error: ${event.payload.suggestion}`);
         });
         
         unlistenErrorRef.current = unlisten;

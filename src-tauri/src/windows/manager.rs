@@ -218,8 +218,8 @@ impl WindowManager {
         }
 
         // Emit events
-        self.emit_window_event(WindowEventType::WindowCreated, &new_window.id, None).await?;
-        self.emit_window_event(WindowEventType::TabDetached, &new_window.id, Some(&tab.id)).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, &new_window.id, None).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, &new_window.id, Some(&tab.id)).await?;
 
         // Set up window event handlers
         self.setup_window_event_handlers(&window, &new_window.id).await?;
@@ -294,8 +294,8 @@ impl WindowManager {
         }
 
         // Emit events
-        self.emit_window_event(WindowEventType::TabMoved, target_window_id, Some(&tab.id)).await?;
-        self.emit_window_event(WindowEventType::TabReattached, target_window_id, Some(&tab.id)).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, target_window_id, Some(&tab.id)).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, target_window_id, Some(&tab.id)).await?;
 
         log::info!("Reattached tab {} from window {} to window {}", tab_id, source_window_id, target_window_id);
         Ok(())
@@ -327,7 +327,7 @@ impl WindowManager {
         }
 
         // Emit tab moved event
-        self.emit_window_event(WindowEventType::TabMoved, target_window_id, Some(tab_id)).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, target_window_id, Some(tab_id)).await?;
 
         Ok(())
     }
@@ -353,7 +353,7 @@ impl WindowManager {
         }
 
         // Emit window closed event
-        self.emit_window_event(WindowEventType::WindowClosed, window_id, None).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, window_id, None).await?;
 
         log::info!("Closed window {}", window_id);
         Ok(())
@@ -422,7 +422,7 @@ impl WindowManager {
                 .map_err(|e| format!("Failed to focus window: {}", e))?;
         }
         // Emit window focused event
-        self.emit_window_event(WindowEventType::WindowFocused, window_id, None).await?;
+        self.emit_window_event(WindowEventType::WindowStateChanged, window_id, None).await?;
 
         Ok(())
     }

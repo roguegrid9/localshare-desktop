@@ -1,7 +1,7 @@
 // src/components/codes/CodeGenerationModal.tsx
 import { useState, useEffect } from "react";
 import { useResourceCodeCommands } from "../../hooks/useResourceCodeCommands";
-import { useToast } from "../ui/Toaster";
+import { toast } from "../ui/sonner";
 import { ResourceType, type ResourceAccessCode, type ProcessCodeOptions, type GridInviteCodeOptions, type ChannelCodeOptions } from "../../types/codes";
 import CodeDisplay from "./CodeDisplay";
 
@@ -52,7 +52,6 @@ export default function CodeGenerationModal({
     getExpiryOptions,
     getUsageLimitOptions
   } = useResourceCodeCommands();
-  const toast = useToast();
 
   // Reset form when modal opens
   useEffect(() => {
@@ -326,7 +325,7 @@ export default function CodeGenerationModal({
     } catch (error) {
       console.error('Failed to generate code:', error);
       const errorMessage = `Failed to generate code: ${error}`;
-      toast(errorMessage, 'error');
+      toast.error(errorMessage);
       onError?.(errorMessage);
     } finally {
       setLoading(false);

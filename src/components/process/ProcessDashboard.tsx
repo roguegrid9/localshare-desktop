@@ -17,6 +17,9 @@ import {
   Copy,
   CheckCircle2
 } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import type { ProcessDashboard as ProcessDashboardType } from '../../types/dashboard';
 import type { ProcessAvailability, LocalProcessStatus } from '../../types/process';
 
@@ -27,12 +30,12 @@ interface ProcessDashboardProps {
 
 function DashboardSkeleton() {
   return (
-    <div className="flex-1 bg-[#0B0D10] p-6 space-y-6">
-      <div className="animate-pulse">
-        <div className="h-8 bg-white/10 rounded mb-6"></div>
-        <div className="h-48 bg-white/5 rounded mb-6"></div>
-        <div className="h-32 bg-white/5 rounded mb-6"></div>
-        <div className="h-24 bg-white/5 rounded"></div>
+    <div className="flex-1 relative bg-bg-primary p-6 space-y-6">
+      <div className="relative z-10 animate-pulse">
+        <div className="h-8 bg-bg-muted rounded-xl mb-6"></div>
+        <div className="h-48 bg-bg-muted rounded-2xl mb-6"></div>
+        <div className="h-32 bg-bg-muted rounded-2xl mb-6"></div>
+        <div className="h-24 bg-bg-muted rounded-2xl"></div>
       </div>
     </div>
   );
@@ -40,13 +43,13 @@ function DashboardSkeleton() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex-1 bg-[#0B0D10] flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4 mx-auto">
+    <div className="flex-1 relative bg-bg-primary flex items-center justify-center">
+      <div className="relative z-10 text-center">
+        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4 mx-auto border border-red-500/20">
           <Activity className="w-8 h-8 text-red-400" />
         </div>
-        <h3 className="text-red-300 font-medium mb-2">Dashboard Error</h3>
-        <p className="text-red-400/60 text-sm">{message}</p>
+        <h3 className="text-red-300 font-semibold mb-2">Dashboard Error</h3>
+        <p className="text-text-secondary text-sm max-w-md">{message}</p>
       </div>
     </div>
   );
@@ -69,46 +72,84 @@ function DashboardHeader({
   const getLocalStatusBadge = () => {
     if (!availability) return null;
 
-    const { local_status, host_display_name } = availability;
+    const { local_status, availability_status, has_tunnel, tunnel_url, relay_available, p2p_compatible, host_display_name } = availability;
 
-    switch (local_status) {
-      case 'hosting':
-        return (
-          <span className="text-sm px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1.5">
-            <Server className="w-3.5 h-3.5" />
-            Hosting
-          </span>
-        );
-      case 'connected':
-        return (
-          <span className="text-sm px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
-            <Share2 className="w-3.5 h-3.5" />
-            Connected
-          </span>
-        );
+    // Show hosting status for local process owners
+    if (local_status === 'hosting') {
+      return (
+        <Badge variant="default" className="bg-blue-500/15 text-blue-300 border-blue-500/40 flex items-center gap-1.5">
+          <Server className="w-3.5 h-3.5" />
+          Hosting
+        </Badge>
+      );
+    }
+
+    // Show connected status for active connections
+    if (local_status === 'connected') {
+      return (
+        <Badge variant="default" className="bg-purple-500/15 text-purple-300 border-purple-500/40 flex items-center gap-1.5">
+          <Share2 className="w-3.5 h-3.5" />
+          Connected
+        </Badge>
+      );
+    }
+
+    // Show availability based on connection method
+    switch (availability_status) {
       case 'available':
+        if (has_tunnel) {
+          return (
+            <Badge variant="success" className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Available (Tunnel)
+            </Badge>
+          );
+        } else if (relay_available) {
+          return (
+            <Badge variant="success" className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Available (Relay)
+            </Badge>
+          );
+        } else if (p2p_compatible) {
+          return (
+            <Badge variant="success" className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Available (P2P)
+            </Badge>
+          );
+        }
         return (
-          <span className="text-sm px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 flex items-center gap-1.5">
-            <Cloud className="w-3.5 h-3.5" />
-            Available from {host_display_name || 'host'}
-          </span>
+          <Badge variant="success" className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Available
+          </Badge>
         );
-      case 'unavailable':
+
+      case 'p2p_only':
+        return (
+          <Badge variant="warning" className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            P2P Only
+          </Badge>
+        );
+
+      case 'offline':
       default:
         return null;
     }
   };
 
   return (
-    <div className="border-b border-white/10 pb-4 mb-6">
+    <div className="border-b border-border pb-4 mb-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-xl font-heading font-bold text-text-primary flex items-center gap-3">
             {name}
-            <span className={`text-lg flex items-center gap-2 ${statusColor}`}>
-              <StatusIcon className="w-5 h-5" />
+            <Badge variant={status === 'running' ? "success" : "destructive"} className="flex items-center gap-1.5">
+              <StatusIcon className="w-3.5 h-3.5" />
               {statusText}
-            </span>
+            </Badge>
             {getLocalStatusBadge()}
           </h1>
         </div>
@@ -117,21 +158,21 @@ function DashboardHeader({
   );
 }
 
-function InfoItem({ 
-  label, 
-  value, 
-  description 
-}: { 
-  label: string; 
-  value: React.ReactNode; 
-  description?: string; 
+function InfoItem({
+  label,
+  value,
+  description
+}: {
+  label: string;
+  value: React.ReactNode;
+  description?: string;
 }) {
   return (
-    <div className="bg-white/5 rounded-lg p-4">
-      <div className="text-white/60 text-sm mb-1">{label}</div>
-      <div className="text-white font-medium">{value}</div>
+    <div className="bg-bg-muted rounded-lg p-4 border border-border">
+      <div className="text-text-secondary text-sm mb-1">{label}</div>
+      <div className="text-text-primary font-medium">{value}</div>
       {description && (
-        <div className="text-white/40 text-xs mt-1">{description}</div>
+        <div className="text-text-tertiary text-xs mt-1">{description}</div>
       )}
     </div>
   );
@@ -139,10 +180,14 @@ function InfoItem({
 
 function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="mb-6">
-      <h2 className="text-lg font-semibold text-white mb-4">{title}</h2>
-      {children}
-    </div>
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -154,21 +199,17 @@ function ProcessStatus({ dashboard }: { dashboard: ProcessDashboardType }) {
   };
 
   return (
-    <Section title={<div className="flex items-center gap-2"><Activity className="w-4 h-4" />Process Status</div>}>
+    <Section title={<><Activity className="w-4 h-4" />Process Status</>}>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <InfoItem
           label="Status"
           value={
-            <span className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${
-              dashboard.status === 'running'
-                ? 'bg-green-500/20 text-green-300'
-                : 'bg-red-500/20 text-red-300'
-            }`}>
+            <Badge variant={dashboard.status === 'running' ? "success" : "destructive"} className="flex items-center gap-1 w-fit">
               {dashboard.status === 'running' ?
                 <><Play className="w-3 h-3" /> Running</> :
                 <><Square className="w-3 h-3" /> Stopped</>
               }
-            </span>
+            </Badge>
           }
         />
 
@@ -194,21 +235,21 @@ function ProcessStatus({ dashboard }: { dashboard: ProcessDashboardType }) {
 
 function ProcessDetails({ dashboard }: { dashboard: ProcessDashboardType }) {
   return (
-    <Section title={<div className="flex items-center gap-2"><FileSearch className="w-4 h-4" />Process Details</div>}>
+    <Section title={<><FileSearch className="w-4 h-4" />Process Details</>}>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <InfoItem 
-          label="Command" 
-          value={<code className="text-sm bg-black/30 px-2 py-1 rounded">{dashboard.command}</code>}
+        <InfoItem
+          label="Command"
+          value={<code className="text-sm bg-bg-primary px-2 py-1 rounded font-mono text-text-primary">{dashboard.command}</code>}
         />
-        
-        <InfoItem 
-          label="Directory" 
-          value={<code className="text-sm bg-black/30 px-2 py-1 rounded">{dashboard.working_dir}</code>}
+
+        <InfoItem
+          label="Directory"
+          value={<code className="text-sm bg-bg-primary px-2 py-1 rounded font-mono text-text-primary">{dashboard.working_dir}</code>}
         />
-        
-        <InfoItem 
-          label="Executable" 
-          value={<code className="text-sm bg-black/30 px-2 py-1 rounded">{dashboard.executable_path}</code>}
+
+        <InfoItem
+          label="Executable"
+          value={<code className="text-sm bg-bg-primary px-2 py-1 rounded font-mono text-text-primary">{dashboard.executable_path}</code>}
         />
       </div>
     </Section>
@@ -217,11 +258,11 @@ function ProcessDetails({ dashboard }: { dashboard: ProcessDashboardType }) {
 
 function StoppedState({ dashboard }: { dashboard: ProcessDashboardType }) {
   return (
-    <Section title={<div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Process Not Running</div>}>
+    <Section title={<><AlertTriangle className="w-4 h-4" />Process Not Running</>}>
       <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-6">
         <div className="text-yellow-300 font-medium mb-2">This process is no longer running.</div>
         {dashboard.last_seen_at && (
-          <div className="text-yellow-400/60 text-sm">
+          <div className="text-text-secondary text-sm">
             Last seen: {new Date(dashboard.last_seen_at).toLocaleString()}
           </div>
         )}
@@ -472,10 +513,10 @@ function P2PConnectionSection({
 
   return (
     <Section title={
-      <div className="flex items-center gap-2">
+      <>
         <Share2 className="w-4 h-4" />
         Connection & Sharing
-      </div>
+      </>
     }>
       <div className={`rounded-lg border p-6 ${
         isHosting ? 'border-blue-500/20 bg-blue-500/10' :
@@ -599,64 +640,50 @@ function P2PConnectionSection({
             {/* Action Buttons */}
             {isAvailable && !isConnected && (
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={handleConnectAsGuest}
                   disabled={isConnecting || connectionStatus === 'reconnecting'}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    isConnecting || connectionStatus === 'reconnecting'
-                      ? 'bg-yellow-600/50 text-yellow-300 cursor-wait'
-                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
-                  }`}
+                  className="bg-yellow-600 hover:bg-yellow-700 text-white"
                 >
                   {connectionStatus === 'reconnecting' ? 'Reconnecting...' :
                    isConnecting ? 'Connecting...' :
                    'Connect to Process'}
-                </button>
+                </Button>
               </div>
             )}
 
             {isConnected && connectionId && (
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={handleDisconnect}
                   disabled={connectionStatus === 'reconnecting'}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    connectionStatus === 'reconnecting'
-                      ? 'bg-red-600/50 text-red-300 cursor-not-allowed'
-                      : 'bg-red-600 text-white hover:bg-red-700'
-                  }`}
+                  variant="destructive"
                 >
                   Disconnect
-                </button>
+                </Button>
               </div>
             )}
 
             {isHosting && connectionStatus !== 'connected' && connectionStatus !== 'reconnecting' && (
               <div className="flex gap-2">
-                <button
+                <Button
                   onClick={handleConnect}
                   disabled={isConnecting || dashboard.status !== 'running'}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                    dashboard.status !== 'running'
-                      ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
-                      : isConnecting
-                      ? 'bg-blue-600/50 text-blue-300 cursor-wait'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {isConnecting ? 'Connecting...' : 'Retry Connection'}
-                </button>
+                </Button>
               </div>
             )}
 
             {/* Status Messages - simplified */}
             {dashboard.status !== 'running' && (
-              <p className="text-xs text-yellow-300/80 mt-3">
+              <p className="text-xs text-text-secondary mt-3">
                 Process must be running to share
               </p>
             )}
             {connectionStatus === 'connected' && (
-              <p className="text-xs text-green-300/80 mt-3">
+              <p className="text-xs text-green-300 mt-3">
                 {isHosting ? 'Accessible to grid members' : 'Connected to remote process'}
               </p>
             )}
@@ -697,28 +724,29 @@ function CopyAddressButton({
   };
 
   return (
-    <div className="bg-blue-500/10 border border-blue-500/20 rounded p-2">
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <div className="text-xs text-blue-300/80 mb-1">Local Address</div>
-          <code className="text-sm text-blue-300 font-mono">{address}</code>
+    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-text-secondary mb-1">Local Address</div>
+          <code className="text-sm text-blue-300 font-mono break-all">{address}</code>
         </div>
-        <button
+        <Button
           onClick={handleCopy}
-          className="ml-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium flex items-center gap-1.5 transition-all"
+          size="sm"
+          className="bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0"
         >
           {copied ? (
             <>
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
               Copied!
             </>
           ) : (
             <>
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="w-3.5 h-3.5 mr-1" />
               Copy
             </>
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -726,9 +754,9 @@ function CopyAddressButton({
 
 function ComingSoonSection() {
   return (
-    <Section title={<div className="flex items-center gap-2"><Lock className="w-4 h-4" />Advanced Features (Coming Soon)</div>}>
-      <div className="bg-white/5 rounded-lg p-4">
-        <div className="text-white/60 space-y-2 text-sm">
+    <Section title={<><Lock className="w-4 h-4" />Advanced Features (Coming Soon)</>}>
+      <div className="bg-bg-muted rounded-lg p-4 border border-border">
+        <div className="text-text-secondary space-y-2 text-sm">
           <div className="flex items-center gap-2"><Cloud className="w-3 h-3" /> Cloud Backup Status</div>
           <div className="flex items-center gap-2"><Clock className="w-3 h-3" /> Version History</div>
           <div className="flex items-center gap-2"><Server className="w-3 h-3" /> Deployment Options</div>
@@ -920,7 +948,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
   if (!dashboard) return <ErrorState message="Process not found" />;
   
   return (
-    <div className="flex-1 bg-[#0B0D10] p-6 overflow-y-auto">
+    <div className="flex-1 bg-bg-primary p-6 overflow-y-auto">
       <DashboardHeader
         name={dashboard.name}
         status={dashboard.status}

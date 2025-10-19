@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
 import { useGrids } from '../hooks/useGrids'
-import GridsRail from './pages/Mainsidebar'
-import ContentPanel from './pages/ContentPanel'
+import { AppSidebar } from '../components/AppSidebar'
 import { WindowContainer } from '../components/windows/WindowContainer'
 import { WindowStateProvider, useWindowStateContext } from '../components/windows/WindowStateProvider'
+import { TitleBar } from '../components/TitleBar'
+import { SidebarProvider, SidebarInset } from '../components/ui/sidebar'
+import { BubbleDock } from '../components/bubbles/BubbleDock'
+import { DynamicIslandDemo } from '../components/dev/DynamicIslandDemo'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useAdaptiveLayout } from '../hooks/useAdaptiveLayout'
+import { useMessageNotifications } from '../hooks/useMessageNotifications'
+import { useUIStore } from '../stores/useUIStore'
 import type { TabContentType } from '../types/windows'
 
 interface AppShellProps {
@@ -11,14 +19,36 @@ interface AppShellProps {
   userState?: any
 }
 
-const LAST_GRID_KEY = 'roguegrid9_last_selected_grid';
+const LAST_GRID_KEY = 'localshare_last_selected_grid';
 
 function AppShellInner({ children, userState }: AppShellProps) {
   const { grids, allGrids, refreshGrids } = useGrids()
   const [selectedGridId, setSelectedGridId] = useState<string>("")
   const [selectedChannelId, setSelectedChannelId] = useState<string>("")
   const [selectedProcessId, setSelectedProcessId] = useState<string>("")
-  const { createProcessTab, mainWindowId } = useWindowStateContext()
+  const { createProcessTab, createNetworkDashboardTab, mainWindowId } = useWindowStateContext()
+  const { initializeFromStorage, setCurrentChat } = useUIStore()
+
+  // Initialize UI store from storage on mount
+  useEffect(() => {
+    void initializeFromStorage()
+  }, [initializeFromStorage])
+
+  // Sync selected channel to UI store
+  useEffect(() => {
+    if (selectedGridId && selectedChannelId) {
+      setCurrentChat(selectedGridId, selectedChannelId)
+    }
+  }, [selectedGridId, selectedChannelId, setCurrentChat])
+
+  // Enable keyboard shortcuts
+  useKeyboardShortcuts()
+
+  // Enable adaptive layout behavior
+  useAdaptiveLayout()
+
+  // Enable global message notifications
+  useMessageNotifications()
 
   // Auto-select the last opened grid when grids are loaded
   useEffect(() => {
@@ -29,11 +59,11 @@ function AppShellInner({ children, userState }: AppShellProps) {
       const lastGrid = grids.find(g => g.id === lastGridId);
 
       if (lastGrid) {
-        console.log("Auto-selecting last opened grid:", lastGridId);
+        // console.log("Auto-selecting last opened grid:", lastGridId);
         setSelectedGridId(lastGridId);
       } else {
         // Select the first grid if last grid doesn't exist
-        console.log("Auto-selecting first grid:", grids[0].id);
+        // console.log("Auto-selecting first grid:", grids[0].id);
         setSelectedGridId(grids[0].id);
         localStorage.setItem(LAST_GRID_KEY, grids[0].id);
       }
@@ -45,13 +75,13 @@ function AppShellInner({ children, userState }: AppShellProps) {
     setSelectedChannelId("")
     setSelectedProcessId("")
     localStorage.setItem(LAST_GRID_KEY, gridId);
-    console.log("Selected grid:", gridId)
+    // console.log("Selected grid:", gridId)
   }
 
   const handleChannelSelect = (channelId: string) => {
     setSelectedChannelId(channelId)
     setSelectedProcessId("")
-    console.log("Selected channel:", channelId)
+    // console.log("Selected channel:", channelId)
   }
 
   const handleProcessSelect = async (processId: string) => {
@@ -61,7 +91,7 @@ function AppShellInner({ children, userState }: AppShellProps) {
       setSelectedChannelId("")
 
       // Create a process tab with dashboard instead of just setting selection
-      console.log("Creating process tab for:", processId)
+      // console.log("Creating process tab for:", processId)
 
       // Get process name for the tab title (you may want to improve this)
       const processName = `Process ${processId.slice(0, 8)}`
@@ -73,9 +103,9 @@ function AppShellInner({ children, userState }: AppShellProps) {
         mainWindowId
       )
 
-      console.log("Process tab created successfully")
+      // console.log("Process tab created successfully")
     } catch (error) {
-      console.error("Failed to create process tab:", error)
+      // console.error("Failed to create process tab:", error)
     }
   }
 
@@ -116,7 +146,7 @@ function AppShellInner({ children, userState }: AppShellProps) {
   }
 
   const handleTabClosed = (content: TabContentType) => {
-  console.log('Tab closed, clearing selection:', content);
+  // console.log('Tab closed, clearing selection:', content);
 
   switch (content.type) {
     case 'Process':
@@ -133,39 +163,65 @@ function AppShellInner({ children, userState }: AppShellProps) {
   }
 };
 
+  const handleOpenNetworkDashboard = async () => {
+    try {
+      await createNetworkDashboardTab(mainWindowId);
+    } catch (error) {
+      // console.error('Failed to open network dashboard:', error);
+    }
+  };
+
+  const selectedGrid = allGrids.find(g => g.id === selectedGridId);
+
   return (
-    <div className="h-screen w-screen bg-[#0B0D10] text-white flex">
-      {/* Left sidebar with grids - Fixed width */}
-      <div className="w-[68px] flex-shrink-0">
-        <GridsRail
-          grids={grids}
-          selectedId={selectedGridId}
-          onSelect={handleGridSelect}
+    <SidebarProvider>
+      <div className="relative h-screen w-screen bg-bg-primary text-text-primary overflow-hidden flex flex-col">
+        {/* Optimized static orb backgrounds - removed animation for performance */}
+        <div
+          className="orb-background orb-primary absolute top-0 left-0 w-[30rem] h-[30rem] opacity-20"
+          aria-hidden
         />
-      </div>
+        <div
+          className="orb-background orb-secondary absolute bottom-0 right-0 w-[32rem] h-[32rem] opacity-18"
+          aria-hidden
+        />
 
-      {/* Middle panel with channels/processes - Fixed width */}
-      <div className="w-[280px] flex-shrink-0">
-        <ContentPanel
-          selectedGridId={selectedGridId}
-          grids={allGrids}
-          onChannelSelect={handleChannelSelect}
-          onProcessSelect={handleProcessSelect}
-        />
-      </div>
+        {/* Main Layout with Sidebar - L-shaped layout */}
+        <div className="relative flex flex-1 overflow-hidden backdrop-blur-[2px]">
+          {/* Unified Sidebar - extends to top */}
+          <AppSidebar
+            grids={grids}
+            selectedGridId={selectedGridId}
+            onGridSelect={handleGridSelect}
+            onOpenNetworkDashboard={handleOpenNetworkDashboard}
+            onChannelSelect={handleChannelSelect}
+            onProcessSelect={handleProcessSelect}
+          />
 
-      {/* Main content area - Flexible width */}
-      <div className="flex-1 min-w-0">
-        <WindowContainer
-          selectedGridId={selectedGridId}
-          selectedChannelId={selectedChannelId}
-          selectedProcessId={selectedProcessId}
-          grids={allGrids}
-          onTabActivated={handleTabActivated}
-          onTabClosed={handleTabClosed}
-        />
+          {/* Main content area with title bar */}
+          <SidebarInset className="flex-1 min-w-0 bg-bg-primary flex flex-col">
+            {/* Title Bar - only spans content area */}
+            <TitleBar gridName={selectedGrid?.name} />
+
+            {/* Window Container */}
+            <WindowContainer
+                selectedGridId={selectedGridId}
+                selectedChannelId={selectedChannelId}
+                selectedProcessId={selectedProcessId}
+                grids={allGrids}
+                onTabActivated={handleTabActivated}
+                onTabClosed={handleTabClosed}
+              />
+          </SidebarInset>
+        </div>
+
+        {/* Overlay Components */}
+        <BubbleDock />
+
+        {/* Dev Tools - Remove in production */}
+        {process.env.NODE_ENV === 'development' && <DynamicIslandDemo />}
       </div>
-    </div>
+    </SidebarProvider>
   )
 }
 

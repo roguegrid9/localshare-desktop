@@ -1,18 +1,15 @@
 import React, { Suspense, useState, useEffect } from 'react';
-import { 
-
-  Cog,  
-  Home,
-  Loader2
-} from 'lucide-react';
+import { Cog, Home } from 'lucide-react';
+import { Spinner } from '../ui/spinner';
 import { invoke } from '@tauri-apps/api/core';
-import { WelcomePage } from './WelcomePage';
 import type { Tab } from '../../types/windows';
-// Add this import at the top of TabContent.tsx
 import GridManagement from '../../layout/pages/GridManagement';
 import ChannelView from '../channels/ChannelView';
 import VoiceChannelWindow from '../channels/VoiceChannelWindow';
 import { ProcessDashboard } from '../process/ProcessDashboard';
+import { BandwidthTracker, CreateTunnelModal, TrialSignupModal } from '../relay';
+import { WelcomePage } from './WelcomePage';
+import { SubscriptionPage } from '../../layout/pages/SubscriptionPage';
 
 const TerminalWindow = React.lazy(() => import('../terminal/TerminalWindow'));
 
@@ -22,11 +19,84 @@ interface TabContentProps {
   isMainWindow: boolean;
 }
 
+// Wrapper to load auth token for BandwidthTracker
+function NetworkDashboardWrapper() {
+  const [authToken, setAuthToken] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [showCreateTunnel, setShowCreateTunnel] = useState(false);
+  const [showTrialSignup, setShowTrialSignup] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const loadAuthToken = async () => {
+      try {
+        const token = await invoke<string>('get_auth_token');
+        setAuthToken(token);
+      } catch (error) {
+        console.error('Failed to load auth token:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAuthToken();
+  }, []);
+
+  const handleCreateTunnel = () => {
+    setShowCreateTunnel(true);
+  };
+
+  const handleStartTrial = () => {
+    setShowTrialSignup(true);
+  };
+
+  const handleTunnelCreated = () => {
+    setShowCreateTunnel(false);
+  };
+
+  const handleTrialStarted = () => {
+    setShowTrialSignup(false);
+    // Force BandwidthTracker to refresh subscription status
+    setRefreshKey(prev => prev + 1);
+  };
+
+  if (loading) {
+    return <ContentLoader />;
+  }
+
+  return (
+    <>
+      <BandwidthTracker
+        key={refreshKey}
+        token={authToken}
+        onClose={() => {}}
+        onCreateTunnel={handleCreateTunnel}
+        onStartTrial={handleStartTrial}
+      />
+
+      {showCreateTunnel && (
+        <CreateTunnelModal
+          token={authToken}
+          onClose={() => setShowCreateTunnel(false)}
+          onCreated={handleTunnelCreated}
+        />
+      )}
+
+      {showTrialSignup && (
+        <TrialSignupModal
+          token={authToken}
+          onClose={() => setShowTrialSignup(false)}
+          onStarted={handleTrialStarted}
+        />
+      )}
+    </>
+  );
+}
+
 function ContentLoader() {
   return (
     <div className="flex-1 flex items-center justify-center bg-[#0B0D10]">
       <div className="flex items-center gap-2 text-white/60">
-        <Loader2 className="w-4 h-4 animate-spin" />
+        <Spinner className="w-4 h-4" />
         <span>Loading...</span>
       </div>
     </div>
@@ -242,9 +312,16 @@ export function TabContent({ tab, windowId}: TabContentProps) {
 
       case 'GridDashboard':
         return <GridManagement gridId={tab.content.data.grid_id} />;
+
+      case 'NetworkDashboard':
+        return <NetworkDashboardWrapper />;
+
+      case 'Subscription':
+        return <SubscriptionPage />;
+
       case 'Welcome':
         return (
-          <WelcomePage 
+          <WelcomePage
             windowId={windowId}
             onQuickAction={(actionId) => {
               console.log('Quick action triggered:', actionId);

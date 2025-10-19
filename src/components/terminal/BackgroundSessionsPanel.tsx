@@ -4,6 +4,7 @@ import React from 'react';
 import { Terminal, Play, Trash2, Clock, Cpu } from 'lucide-react';
 import { useTerminalSessions } from '../../hooks/useTerminalSessions';
 import { useWindowState } from '../../hooks/useWindowState';
+import { Spinner } from '../ui/spinner';
 
 interface BackgroundSessionsPanelProps {
   gridId?: string;
@@ -64,7 +65,7 @@ export function BackgroundSessionsPanel({ gridId, className }: BackgroundSession
     return (
       <div className={cx('p-4 border border-white/10 rounded-lg bg-[#0a0b0f]', className)}>
         <div className="flex items-center gap-2 text-white/60">
-          <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+          <Spinner className="w-4 h-4 text-orange-400" />
           <span>Loading background sessions...</span>
         </div>
       </div>

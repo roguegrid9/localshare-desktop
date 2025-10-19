@@ -12,7 +12,9 @@ use crate::api::types::{
     CreateSharedProcessRequest, CreateSharedProcessResponse, GetGridSharedProcessesResponse,
     UpdateSharedProcessStatusRequest,
     GridRelayStatusResponse, UpdateRelayModeRequest, PurchaseBandwidthRequest,
-    PaymentIntentResponse, ReportBandwidthUsageRequest
+    PaymentIntentResponse, ReportBandwidthUsageRequest,
+    RelaySubscription, GetCredentialsResponse, Tunnel, SubdomainAvailability,
+    StartTrialRequest, CreateTunnelRequest, ReportNATStatusRequest
 };
 use crate::api::types::{GridPermissions, ProcessPermissions, UpdateGridSettingsRequest, UpdateMemberPermissionsRequest, GetAuditLogRequest, GetAuditLogResponse};
 use anyhow::{Result, Context};
@@ -2334,5 +2336,227 @@ impl CoordinatorClient {
 
         log::info!("Successfully retrieved process availability: {}", serde_json::to_string_pretty(&availability).unwrap_or_else(|_| "failed to serialize".to_string()));
         Ok(availability)
+    }
+
+    // ===== FRP RELAY & TUNNEL METHODS =====
+
+    /// Start FRP relay subscription
+    pub async fn start_relay_trial(
+        &self,
+        token: &str,
+        location: Option<String>,
+    ) -> Result<RelaySubscription> {
+        log::info!("Starting relay subscription with location: {:?}", location);
+
+        let request = StartTrialRequest { location };
+
+        let response = self.client
+            .post(&format!("{}/api/v1/relay/trial", self.base_url))
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to start relay subscription")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to start relay trial ({}): {}", status, error_text);
+        }
+
+        let subscription: RelaySubscription = response
+            .json()
+            .await
+            .context("Failed to parse relay subscription response")?;
+
+        log::info!("Successfully started relay trial: {:?}", subscription.id);
+        Ok(subscription)
+    }
+
+    /// Get FRP credentials for authenticated user
+    pub async fn get_relay_credentials(
+        &self,
+        token: &str,
+    ) -> Result<GetCredentialsResponse> {
+        log::info!("Fetching relay credentials");
+
+        let response = self.client
+            .get(&format!("{}/api/v1/relay/credentials", self.base_url))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to get relay credentials")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to get relay credentials ({}): {}", status, error_text);
+        }
+
+        let credentials: GetCredentialsResponse = response
+            .json()
+            .await
+            .context("Failed to parse credentials response")?;
+
+        log::info!("Successfully retrieved relay credentials");
+        Ok(credentials)
+    }
+
+    /// Create a new public HTTPS tunnel
+    pub async fn create_tunnel(
+        &self,
+        token: &str,
+        subdomain: String,
+        local_port: u16,
+        protocol: String,
+    ) -> Result<Tunnel> {
+        log::info!("Creating tunnel: {}.roguegrid9.com -> localhost:{}", subdomain, local_port);
+
+        let request = CreateTunnelRequest {
+            subdomain,
+            local_port,
+            protocol,
+        };
+
+        let response = self.client
+            .post(&format!("{}/api/v1/tunnels", self.base_url))
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to create tunnel")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to create tunnel ({}): {}", status, error_text);
+        }
+
+        let tunnel: Tunnel = response
+            .json()
+            .await
+            .context("Failed to parse tunnel response")?;
+
+        log::info!("Successfully created tunnel: {}", tunnel.id);
+        Ok(tunnel)
+    }
+
+    /// List all tunnels for authenticated user
+    pub async fn list_tunnels(
+        &self,
+        token: &str,
+    ) -> Result<Vec<Tunnel>> {
+        log::info!("Listing tunnels");
+
+        let response = self.client
+            .get(&format!("{}/api/v1/tunnels", self.base_url))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to list tunnels")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to list tunnels ({}): {}", status, error_text);
+        }
+
+        let tunnels: Vec<Tunnel> = response
+            .json()
+            .await
+            .context("Failed to parse tunnels response")?;
+
+        log::info!("Successfully retrieved {} tunnels", tunnels.len());
+        Ok(tunnels)
+    }
+
+    /// Delete a tunnel
+    pub async fn delete_tunnel(
+        &self,
+        token: &str,
+        tunnel_id: String,
+    ) -> Result<()> {
+        log::info!("Deleting tunnel: {}", tunnel_id);
+
+        let response = self.client
+            .delete(&format!("{}/api/v1/tunnels/{}", self.base_url, tunnel_id))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to delete tunnel")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to delete tunnel ({}): {}", status, error_text);
+        }
+
+        log::info!("Successfully deleted tunnel: {}", tunnel_id);
+        Ok(())
+    }
+
+    /// Check subdomain availability (public endpoint, no auth required)
+    pub async fn check_subdomain(
+        &self,
+        subdomain: String,
+    ) -> Result<SubdomainAvailability> {
+        log::info!("Checking subdomain availability: {}", subdomain);
+
+        let response = self.client
+            .get(&format!("{}/api/v1/tunnels/check/{}", self.base_url, subdomain))
+            .send()
+            .await
+            .context("Failed to check subdomain")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to check subdomain ({}): {}", status, error_text);
+        }
+
+        let availability: SubdomainAvailability = response
+            .json()
+            .await
+            .context("Failed to parse subdomain availability response")?;
+
+        log::info!("Subdomain {} available: {}", subdomain, availability.available);
+        Ok(availability)
+    }
+
+    /// Report NAT status to the server
+    pub async fn report_nat_status(
+        &self,
+        token: &str,
+        nat_type: String,
+        needs_relay: bool,
+        connection_quality: String,
+    ) -> Result<()> {
+        log::info!("Reporting NAT status: {} (needs_relay: {})", nat_type, needs_relay);
+
+        let request_body = ReportNATStatusRequest {
+            nat_type,
+            needs_relay,
+            connection_quality,
+        };
+
+        let response = self.client
+            .post(&format!("{}/api/v1/users/nat-status", self.base_url))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to report NAT status")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            log::warn!("Failed to report NAT status ({}): {}", status, error_text);
+            // Don't fail hard on NAT reporting errors - it's not critical
+            return Ok(());
+        }
+
+        log::info!("Successfully reported NAT status");
+        Ok(())
     }
 }

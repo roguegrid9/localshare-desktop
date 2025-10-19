@@ -3,7 +3,6 @@ export type GridStatus = "online" | "idle"; // per spec: grids won't be offline
 export interface GridSummary {
   id: string;
   name: string;
-  icon?: React.ReactNode; // optional: supply a lucide icon
   status: GridStatus;
   memberCount?: number;
   unread?: number;

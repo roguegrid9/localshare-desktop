@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTerminal } from '../../hooks/useTerminal';
 import PortSharingModal from './PortSharingModal';
+import { Spinner } from '../ui/spinner';
 
 interface TerminalWindowProps {
   sessionId: string;
@@ -75,15 +76,27 @@ export default function TerminalWindow({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    let timeoutId: NodeJS.Timeout | null = null;
+
     resizeObserverRef.current = new ResizeObserver(() => {
-      setTimeout(() => {
+      // Clear previous timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      // Debounce terminal fit to 300ms for better performance
+      timeoutId = setTimeout(() => {
         fitTerminal();
-      }, 100);
+        timeoutId = null;
+      }, 300);
     });
 
     resizeObserverRef.current.observe(containerRef.current);
 
     return () => {
+      // Clean up timeout on unmount
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
       }
@@ -146,7 +159,7 @@ export default function TerminalWindow({
         )}>
           <div className="flex items-center gap-2">
             {isConnecting && (
-              <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+              <Spinner className="w-4 h-4 text-yellow-400" />
             )}
             {error && (
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,7 +206,7 @@ export default function TerminalWindow({
       {isConnecting && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
           <div className="flex items-center gap-2 text-white/80">
-            <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+            <Spinner className="w-4 h-4 text-orange-400" />
             <span>Connecting to terminal...</span>
           </div>
         </div>

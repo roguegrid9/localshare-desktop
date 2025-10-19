@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 // keep imports relative to match your codebase style
-import { useToast } from "../components/ui/Toaster";
+import { toast } from "../components/ui/sonner";
 import type {
   P2PSession,
   SessionStateChangedPayload,
@@ -54,7 +54,6 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeCalls, setActiveCalls] = useState<Record<string, boolean>>({});
   const [mediaQuality, setMediaQuality] = useState<string>('medium');
   
-  const toast = useToast();
 
   // ---- helpers ----
   const upsertSession = useCallback((s: P2PSession) => {
@@ -64,13 +63,13 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Load user's grids - FIXED: Now only loads when explicitly called
   const loadGrids = useCallback(async () => {
     try {
-      console.log("Loading grids...");
+      // console.log("Loading grids...");
       const gridsData = await invoke<{ grids: Grid[]; total: number }>("get_my_grids");
       setGrids(gridsData.grids || []);
       setGridsLoaded(true);
-      console.log("Grids loaded successfully:", gridsData.grids?.length || 0);
+      // console.log("Grids loaded successfully:", gridsData.grids?.length || 0);
     } catch (error) {
-      console.error("Failed to load grids:", error);
+      // console.error("Failed to load grids:", error);
       // Don't throw - this is expected when user isn't authenticated
       setGridsLoaded(false);
     }
@@ -103,11 +102,11 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           channelId: sessionId,
           gridId: gridId // Pass the grid ID
         });
-        console.log(`Created voice channel media session for channel: ${sessionId} in grid: ${gridId}`);
+        // console.log(`Created voice channel media session for channel: ${sessionId} in grid: ${gridId}`);
       } else {
         // For P2P grid sessions, use the existing initialize command
         await invoke("initialize_media_session", { sessionId });
-        console.log(`Initialized P2P media session: ${sessionId}`);
+        // console.log(`Initialized P2P media session: ${sessionId}`);
       }
       
       // Update session to indicate media is enabled
@@ -129,10 +128,10 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveCalls(prev => ({ ...prev, [sessionId]: true }));
       }
       
-      toast('Media session initialized', 'success');
+      toast.success('Media session initialized');
     } catch (error) {
-      console.error("Failed to initialize media session:", error);
-      toast(`Failed to initialize media: ${error}`, 'error');
+      // console.error("Failed to initialize media session:", error);
+      toast.error(`Failed to initialize media: ${error}`);
       throw error; // Re-throw so caller can handle it
     }
   }, [toast]);
@@ -143,7 +142,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const sessions = await invoke<string[]>("get_media_sessions");
       return sessions;
     } catch (error) {
-      console.error("Failed to get media sessions:", error);
+      // console.error("Failed to get media sessions:", error);
       return [];
     }
   }, []);
@@ -172,10 +171,10 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return rest;
       });
       
-      toast('Media session closed', 'info');
+      toast.info('Media session closed');
     } catch (error) {
-      console.error("Failed to close media session:", error);
-      toast(`Failed to close media session: ${error}`, 'error');
+      // console.error("Failed to close media session:", error);
+      toast.error(`Failed to close media session: ${error}`);
     }
   }, [toast]);
 
@@ -196,13 +195,13 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             serviceReady = true;
           } catch (error) {
             attempts++;
-            console.log(`Waiting for grids service... attempt ${attempts}`);
+            // console.log(`Waiting for grids service... attempt ${attempts}`);
             await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
         
         if (!serviceReady) {
-          console.warn("Grids service not ready after waiting, continuing anyway");
+          // console.warn("Grids service not ready after waiting, continuing anyway");
         }
         
         setP2PReady(true);
@@ -214,13 +213,13 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Existing transport and process listeners
         const unsubTransportStarted = await listen("transport_started", (event: any) => {
           const { grid_id, connection_info } = event.payload;
-          toast(`Transport tunnel active: ${connection_info.instructions}`, "success");
+          toast.success(`Transport tunnel active: ${connection_info.instructions}`);
         });
         unsubscribers.push(unsubTransportStarted);
         
         const unsubProcessOutput = await listen("process_output", (event: any) => {
           const { grid_id, data } = event.payload;
-          console.log("Process output:", atob(data));
+          // console.log("Process output:", atob(data));
         });
         unsubscribers.push(unsubProcessOutput);
 
@@ -257,15 +256,9 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             if (state === "Connected") {
               const grid = grids.find(g => g.id === grid_id);
-              toast(
-                `P2P Connected - Session ${session_id}${grid ? ` in ${grid.name}` : ''}`,
-                "success"
-              );
+              toast.success(`P2P Connected - Session ${session_id}${grid ? ` in ${grid.name}` : ''}`);
             } else if (state === "Failed") {
-              toast(
-                `P2P Connection Failed: ${error_message ?? "Unknown error"}`,
-                "error"
-              );
+              toast.error(`P2P Connection Failed: ${error_message ?? "Unknown error"}`);
             }
           }
         );
@@ -285,7 +278,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }));
             
-            toast('Media session ready', 'success');
+            toast.success('Media session ready');
           }
         );
         unsubscribers.push(unsubMediaSessionInit);
@@ -303,7 +296,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }));
             
-            toast(`${kind === 'audio' ? 'Microphone' : 'Camera'} ${enabled ? 'added' : 'removed'}`, 'info');
+            toast.info(`${kind === 'audio' ? 'Microphone' : 'Camera'} ${enabled ? 'added' : 'removed'}`);
           }
         );
         unsubscribers.push(unsubMediaTrackAdded);
@@ -350,7 +343,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }));
             
-            toast(isScreenShare ? 'Screen sharing started' : 'Camera switched', 'info');
+            toast.info(isScreenShare ? 'Screen sharing started' : 'Camera switched');
           }
         );
         unsubscribers.push(unsubVideoTrackReplaced);
@@ -369,7 +362,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }));
             
-            toast(`Remote ${kind} ${enabled ? 'started' : 'stopped'}`, 'info');
+            toast.info(`Remote ${kind} ${enabled ? 'started' : 'stopped'}`);
           }
         );
         unsubscribers.push(unsubRemoteMediaTrack);
@@ -390,13 +383,13 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             
             if (connected) {
               setActiveCalls(prev => ({ ...prev, [session_id]: true }));
-              toast('Media connection established', 'success');
+              toast.success('Media connection established');
             } else {
               setActiveCalls(prev => {
                 const { [session_id]: _, ...rest } = prev;
                 return rest;
               });
-              toast('Media connection lost', 'warning');
+              toast('Media connection lost');
             }
           }
         );
@@ -406,7 +399,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           "remote_media_state_changed",
           (event) => {
             const { session_id, user_id, enabled } = event.payload;
-            console.log(`Remote media state changed: ${user_id} - ${enabled}`);
+            // console.log(`Remote media state changed: ${user_id} - ${enabled}`);
           }
         );
         unsubscribers.push(unsubRemoteMediaState);
@@ -415,7 +408,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           "remote_quality_changed",
           (event) => {
             const { session_id, user_id, quality_preset } = event.payload;
-            toast(`${user_id} changed quality to ${quality_preset}`, 'info');
+            toast.info(`${user_id} changed quality to ${quality_preset}`);
           }
         );
         unsubscribers.push(unsubRemoteQuality);
@@ -428,9 +421,9 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const grid = grids.find(g => g.id === grid_id);
             
             if (new_host_id) {
-              toast(`Grid ${grid?.name || grid_id} is now hosted by ${new_host_id}`, "info");
+              toast.info(`Grid ${grid?.name || grid_id} is now hosted by ${new_host_id}`);
             } else {
-              toast(`Grid ${grid?.name || grid_id} is no longer hosted`, "info");
+              toast.info(`Grid ${grid?.name || grid_id} is no longer hosted`);
             }
           }
         );
@@ -441,7 +434,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (event) => {
             const { grid_id } = event.payload;
             const grid = grids.find(g => g.id === grid_id);
-            toast(`You are now hosting ${grid?.name || grid_id}`, "success");
+            toast.success(`You are now hosting ${grid?.name || grid_id}`);
           }
         );
         unsubscribers.push(unsubHostingStarted);
@@ -451,34 +444,31 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (event) => {
             const { grid_id } = event.payload;
             const grid = grids.find(g => g.id === grid_id);
-            toast(`Stopped hosting ${grid?.name || grid_id}`, "info");
+            toast.info(`Stopped hosting ${grid?.name || grid_id}`);
           }
         );
         unsubscribers.push(unsubHostingStopped);
 
       } catch (err) {
-        console.error("P2P init failed:", err);
-        toast("Failed to initialize P2P service", "error");
+        // console.error("P2P init failed:", err);
+        toast.error("Failed to initialize P2P service");
       }
     })();
 
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [toast, upsertSession, grids]); // Removed loadGrids from dependencies
+  }, [toast, upsertSession]); // Removed grids - use ref for grid lookups instead
 
   // ---- Grid-based actions (unchanged) ----
   const joinGridSession = useCallback(async (gridId: string) => {
     try {
       await invoke<string>("join_grid_session", { gridId });
-      
+
       const grid = grids.find(g => g.id === gridId);
-      toast(
-        `Joining session in ${grid?.name || gridId}...`,
-        "success"
-      );
+      toast.success(`Joining session in ${grid?.name || gridId}...`);
     } catch (err) {
-      toast(`Failed to join grid session: ${String(err)}`, "error");
+      toast.error(`Failed to join grid session: ${String(err)}`);
     }
   }, [toast, grids]);
 
@@ -487,9 +477,9 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await invoke("release_grid_host", { gridId });
       
       const grid = grids.find(g => g.id === gridId);
-      toast(`Released host status for ${grid?.name || gridId}`, "success");
+      toast.success(`Released host status for ${grid?.name || gridId}`);
     } catch (err) {
-      toast(`Failed to release host: ${String(err)}`, "error");
+      toast.error(`Failed to release host: ${String(err)}`);
     }
   }, [toast, grids]);
 
@@ -498,7 +488,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const status = await invoke("get_grid_session_status", { gridId });
       return status;
     } catch (err) {
-      console.error("Failed to get grid status:", err);
+      // console.error("Failed to get grid status:", err);
       return null;
     }
   }, []);
@@ -523,18 +513,18 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return rest;
       });
       
-      toast(`Session closed: ${sessionId}`, "success");
+      toast.success(`Session closed: ${sessionId}`);
     } catch (err) {
-      toast(`Failed to close session: ${String(err)}`, "error");
+      toast.error(`Failed to close session: ${String(err)}`);
     }
   }, [toast, sessions, closeMediaSession]);
 
   const sendData = useCallback(async (sessionId: string, data: number[]) => {
     try {
       await invoke("send_p2p_data", { sessionId, data });
-      toast(`Data sent to session ${sessionId}`, "success");
+      toast.success(`Data sent to session ${sessionId}`);
     } catch (err) {
-      toast(`Failed to send data: ${String(err)}`, "error");
+      toast.error(`Failed to send data: ${String(err)}`);
     }
   }, [toast]);
 

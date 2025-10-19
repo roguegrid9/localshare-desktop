@@ -1,27 +1,60 @@
 @import "tailwindcss";
 @import '@xterm/xterm/css/xterm.css';
+
+/* Import LocalShare Design System */
+@import './theme/tokens.css';
+
+/* Import Fonts */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+/* @import "tw-animate-css"; */ /* Commented out - package not found */
+
+@custom-variant dark (&:is(.dark *));
+
 /* Tell Tailwind where to scan (v4 way) */
 @source "./**/*.{ts,tsx,js,jsx,html}";
 @source "../index.html";
 
-/* your globals */
-html, body, #root { 
-  height: 100%; 
+/* Global resets and base styles */
+html, body, #root {
+  height: 100%;
   width: 100%;
   overflow-x: hidden;
   margin: 0;
   padding: 0;
 }
 
-/* Prevent any element from creating horizontal scroll */
 * {
   box-sizing: border-box;
 }
 
 body {
-  background-color: #0B0D10;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Animations */
 @keyframes slide-in {
   from {
     transform: translateX(120%);
@@ -37,7 +70,35 @@ body {
   animation: slide-in 0.25s ease-out;
 }
 
-/* Hide scrollbars while keeping scroll functionality */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 150ms ease-out;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 150ms ease-out;
+}
+
+/* Scrollbar styling */
 .scrollbar-none {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
@@ -45,4 +106,174 @@ body {
 
 .scrollbar-none::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
+}
+
+/* Custom scrollbar for themed elements */
+.scrollbar-themed {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg-surface);
+}
+
+.scrollbar-themed::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-themed::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* Focus states */
+:focus-visible {
+  outline: 2px solid var(--accent-solid);
+  outline-offset: 2px;
+}
+
+/* Glass surface helper */
+.glass-panel {
+  background-color: rgba(12, 14, 20, 0.72);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-backdrop);
+}
+
+[data-theme='light'] .glass-panel {
+  background-color: rgba(255, 255, 255, 0.82);
+}
+
+/* ============================================
+   TAURI DRAG REGIONS
+   ============================================ */
+.titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag,
+[data-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* ============================================
+   Z-INDEX LADDER
+   ============================================ */
+.z-titlebar {
+  z-index: 20;
+}
+
+.z-overlays {
+  z-index: 30;
+}
+
+.z-toasts {
+  z-index: 40;
+}
+
+.z-modals {
+  z-index: 50;
+}
+
+.z-menus {
+  z-index: 60;
+}
+
+/* ============================================
+   TOASTER POSITIONING
+   ============================================ */
+[data-sonner-toaster] {
+  top: 52px !important;
+  right: 12px !important;
+  z-index: 40 !important;
+}
+
+[data-sonner-toast] {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ============================================
+   UTILITY HELPERS
+   ============================================ */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+:root {
+  --sidebar: hsl(0 0% 98%);
+  --sidebar-foreground: hsl(240 5.3% 26.1%);
+  --sidebar-primary: hsl(240 5.9% 10%);
+  --sidebar-primary-foreground: hsl(0 0% 98%);
+  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent-foreground: hsl(240 5.9% 10%);
+  --sidebar-border: hsl(220 13% 91%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+}
+
+.dark {
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+}
+
+@theme inline {
+  /* Base colors for shadcn */
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-ring: var(--accent-solid);
+
+  /* Main theme colors */
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-hover: var(--bg-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent-solid: var(--accent-solid);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  /* Sidebar colors */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

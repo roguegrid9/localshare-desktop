@@ -1,6 +1,5 @@
 use crate::state::app::AppState;
 use super::types::*;
-use super::tab_state::TabStateManager;
 use tauri::{AppHandle, State};
 
 /// Initialize the window management system
@@ -376,6 +375,23 @@ pub async fn create_grid_dashboard_tab(
     let request = CreateTabRequest {
         content,
         title: Some(format!("{} Dashboard", grid_name)),
+        window_id,
+    };
+
+    create_tab(request, state).await
+}
+
+/// Create a network dashboard tab
+#[tauri::command]
+pub async fn create_network_dashboard_tab(
+    window_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Tab, String> {
+    let content = TabContentType::NetworkDashboard;
+
+    let request = CreateTabRequest {
+        content,
+        title: Some("Network Dashboard".to_string()),
         window_id,
     };
 

@@ -1,6 +1,6 @@
 // src/hooks/useMediaStreams.ts - Updated to use useAudioDevices hook
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useToast } from '../components/ui/Toaster';
+import { toast } from '../components/ui/sonner';
 import { useAudioDevices } from './useAudioDevices';
 import type {
   EnhancedMediaState,
@@ -59,7 +59,6 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
   const [qualityPreset, setQualityPreset] = useState<MediaQualityPreset>(initialQuality);
   const [isInitialized, setIsInitialized] = useState(false);
   
-  const toast = useToast();
   
   // Use the new audio devices hook
   const {
@@ -197,7 +196,7 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
           }
         }));
 
-        toast('Microphone started (backend)', 'success');
+        toast.success('Microphone started (backend)');
         return null; // Backend doesn't return MediaStream
       } else {
         // Fallback to browser WebRTC
@@ -206,7 +205,7 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to start audio:', error);
-      toast(`Failed to start microphone: ${message}`, 'error');
+      toast.error(`Failed to start microphone: ${message}`);
       return null;
     }
   }, [audioStatus.available, audioSettings, startCapture, toast]);
@@ -249,12 +248,12 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
       }));
       
       startBrowserAudioLevelMonitoring();
-      toast('Microphone started (browser)', 'success');
+      toast.success('Microphone started (browser)');
       return stream;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('Failed to start browser audio:', error);
-      toast(`Failed to start microphone: ${message}`, 'error');
+      toast.error(`Failed to start microphone: ${message}`);
       return null;
     }
   }, [qualityPreset, toast]);
@@ -281,10 +280,10 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
       }
 
       stopBrowserAudioLevelMonitoring();
-      toast('Microphone stopped', 'info');
+      toast.info('Microphone stopped');
     } catch (error) {
       console.error('Failed to stop audio:', error);
-      toast('Failed to stop microphone', 'error');
+      toast.error('Failed to stop microphone');
     }
   }, [audioStatus.available, backendCaptureActive, mediaState.audio.stream, stopCapture, toast]);
 
@@ -313,10 +312,10 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
         }
       }));
       
-      toast(newMutedState ? 'Microphone muted' : 'Microphone unmuted', 'info');
+      toast.info(newMutedState ? 'Microphone muted' : 'Microphone unmuted');
     } catch (error) {
       console.error('Failed to toggle mute:', error);
-      toast('Failed to toggle mute', 'error');
+      toast.error('Failed to toggle mute');
     }
   }, [audioStatus.available, mediaState.audio.muted, mediaState.audio.stream, muteAudio, toast]);
 
@@ -326,10 +325,10 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
       if (audioStatus.available) {
         await setVolume(volume);
       }
-      toast(`Volume set to ${Math.round(volume * 100)}%`, 'info');
+      toast.info(`Volume set to ${Math.round(volume * 100)}%`);
     } catch (error) {
       console.error('Failed to set volume:', error);
-      toast('Failed to set volume', 'error');
+      toast.error('Failed to set volume');
     }
   }, [audioStatus.available, setVolume, toast]);
 
@@ -414,7 +413,7 @@ export function useMediaStreams(initialQuality: MediaQualityPreset = 'medium') {
       console.log('Media system initialized');
     } catch (error) {
       console.error('Failed to initialize media system:', error);
-      toast('Media system initialization failed', 'error');
+      toast.error('Media system initialization failed');
     }
   }, [refreshAvailableDevices, toast]);
 

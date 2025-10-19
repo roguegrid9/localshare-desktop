@@ -1,15 +1,27 @@
-import 
- { useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useToast } from "../../components/ui/Toaster";
+import { toast } from "sonner";
+import { Check, Clipboard } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { Button } from "../../components/ui/button";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "../../components/ui/input-otp";
 
 type JoinGridModalProps = {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void; // Called when grid is successfully joined
+  onSuccess: () => void;
 };
 
-// Based on your Rust backend, join_grid_by_code returns Grid directly
 type Grid = {
   id: string;
   name: string;
@@ -25,50 +37,34 @@ type Grid = {
   updated_at: string;
 };
 
-
 export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModalProps) {
   const [inviteCode, setInviteCode] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [joinedGrid, setJoinedGrid] = useState<Grid | null>(null);
-  const [step, setStep] = useState<'form' | 'success'>('form');
-  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!inviteCode.trim()) {
-      toast("Please enter an invite code", "error");
-      return;
-    }
 
-    // Basic validation for invite code format
-    const cleanCode = inviteCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleanCode.length !== 12) {
-      toast("Invite code should be 12 characters", "error");
+    if (inviteCode.length !== 6) {
+      toast.error("Please enter a 6-character invite code");
       return;
     }
 
     try {
       setIsJoining(true);
-      
-      console.log("Joining grid with invite code:", cleanCode);
-      
-      const grid = await invoke<Grid>("join_grid_by_code", { 
-        inviteCode: cleanCode 
+
+      const grid = await invoke<Grid>("join_grid_by_code", {
+        inviteCode: inviteCode.toUpperCase()
       });
-      
-      console.log("Successfully joined grid:", grid);
+
       setJoinedGrid(grid);
-      setStep('success');
-      
-      toast(`Successfully joined "${grid.name}"!`, "success");
-      onSuccess(); // Refresh the grids list
-      
+      toast.success(`Successfully joined "${grid.name}"!`);
+      onSuccess();
+
     } catch (error) {
       console.error("Failed to join grid:", error);
       let errorMessage = "Failed to join grid";
-      
-      // Handle specific error cases
+
       if (typeof error === 'string') {
         if (error.includes("Invalid invite code")) {
           errorMessage = "Invalid invite code";
@@ -80,8 +76,8 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
           errorMessage = "Invite code has expired";
         }
       }
-      
-      toast(errorMessage, "error");
+
+      toast.error(errorMessage);
     } finally {
       setIsJoining(false);
     }
@@ -89,189 +85,151 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
 
   const handleClose = () => {
     if (!isJoining) {
-      // Reset state when closing
-      setStep('form');
       setJoinedGrid(null);
       setInviteCode("");
       onClose();
     }
   };
 
+  const handleFinish = () => {
+    handleClose();
+  };
+
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      const cleanText = text.trim().toUpperCase();
-      setInviteCode(cleanText);
-      toast("Pasted from clipboard", "success");
+      const cleanText = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (cleanText.length === 6) {
+        setInviteCode(cleanText);
+        toast.success("Pasted from clipboard");
+      } else {
+        toast.error("Invalid code format. Expected 6 characters.");
+      }
     } catch (error) {
       console.error("Failed to paste from clipboard:", error);
-      toast("Failed to paste from clipboard", "error");
+      toast.error("Failed to paste from clipboard");
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-md mx-4">
-        <div className="rounded-xl border border-white/10 bg-[#111319] p-6 shadow-2xl">
-          {step === 'form' ? (
-            <>
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold">Join a Grid</h2>
-                <button
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md">
+        {!joinedGrid ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Join a Grid</DialogTitle>
+              <DialogDescription>
+                Enter a 6-character invite code to join a collaborative grid
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex flex-col items-center gap-4">
+                  <InputOTP
+                    maxLength={6}
+                    value={inviteCode}
+                    onChange={(value) => setInviteCode(value.toUpperCase())}
+                    disabled={isJoining}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePaste}
+                    disabled={isJoining}
+                    className="gap-2"
+                  >
+                    <Clipboard className="h-4 w-4" />
+                    Paste Code
+                  </Button>
+                </div>
+
+                <p className="text-xs text-center text-muted-foreground">
+                  Get invite codes from grid owners or members
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={handleClose}
                   disabled={isJoining}
-                  className="rounded-lg p-1 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-50"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isJoining || inviteCode.length !== 6}
+                >
+                  {isJoining ? "Joining..." : "Join Grid"}
+                </Button>
               </div>
-
-              {/* Instructions */}
-              <div className="mb-6 p-3 rounded-lg bg-white/5 border border-white/10">
-                <p className="text-sm text-white/80 mb-2">Enter an invite code to join a collaborative grid:</p>
-                <ul className="text-xs text-white/60 space-y-1">
-                  <li>• Invite codes are 12 characters</li>
-                  <li>• Get codes from grid owners or members</li>
-                  <li>• Codes may have usage limits or expiration</li>
-                </ul>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Invite Code Input */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Invite Code <span className="text-red-400">*</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inviteCode}
-                      onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                      placeholder="ABC123DEF456"
-                      className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none font-mono text-center text-lg tracking-wider"
-                      disabled={isJoining}
-                      maxLength={12}
-                      autoComplete="off"
-                    />
-                    <button
-                      type="button"
-                      onClick={handlePaste}
-                      disabled={isJoining}
-                      className="rounded-lg border border-white/10 px-3 py-2 hover:border-white/20 hover:bg-white/5 disabled:opacity-50"
-                      title="Paste from clipboard"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p className="text-xs text-white/40 mt-1">
-                    12-character hexadecimal code
-                  </p>
+            </form>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/20">
+                  <Check className="h-5 w-5 text-green-500" />
                 </div>
+                Welcome to the Grid!
+              </DialogTitle>
+              <DialogDescription>
+                You've successfully joined "{joinedGrid.name}"
+              </DialogDescription>
+            </DialogHeader>
 
-                {/* Form Actions */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    disabled={isJoining}
-                    className="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium hover:border-white/20 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isJoining || !inviteCode.trim()}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                  >
-                    {isJoining ? "Joining..." : "Join Grid"}
-                  </button>
+            <div className="space-y-4">
+              {/* Grid Info */}
+              <div className="rounded-lg border bg-muted p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Members:</span>
+                  <span className="font-medium">
+                    {joinedGrid.member_count}/{joinedGrid.max_members}
+                  </span>
                 </div>
-              </form>
-            </>
-          ) : (
-            <>
-              {/* Success State */}
-              <div className="text-center">
-                {/* Success Icon */}
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Your Role:</span>
+                  <span className="font-medium capitalize">{joinedGrid.user_role}</span>
                 </div>
-
-                {/* Success Message */}
-                <h2 className="text-xl font-semibold mb-2">Welcome to the Grid!</h2>
-                <p className="text-white/60 mb-6">
-                  You've successfully joined "{joinedGrid?.name}"
-                </p>
-
-                {/* Grid Info */}
-                {joinedGrid && (
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-4 mb-6 text-left">
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-white/60">Grid Name:</span>
-                        <span className="font-medium">{joinedGrid.name}</span>
-                      </div>
-                      {joinedGrid.description && (
-                        <div className="flex justify-between">
-                          <span className="text-white/60">Description:</span>
-                          <span className="text-right max-w-[200px] truncate">{joinedGrid.description}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-white/60">Type:</span>
-                        <span className="capitalize">{joinedGrid.grid_type || "General"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-white/60">Members:</span>
-                        <span>{joinedGrid.member_count}/{joinedGrid.max_members}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-white/60">Your Role:</span>
-                        <span className="text-blue-400 capitalize">{joinedGrid.user_role}</span>
-                      </div>
-                    </div>
+                {joinedGrid.grid_type && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Type:</span>
+                    <span className="font-medium capitalize">{joinedGrid.grid_type}</span>
                   </div>
                 )}
-
-                {/* Next Steps */}
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4 mb-6 text-left">
-                  <h3 className="font-medium text-blue-300 mb-2">What's Next?</h3>
-                  <ul className="text-xs text-blue-200/80 space-y-1">
-                    <li>• Connect with other grid members</li>
-                    <li>• Start P2P sessions when members are online</li>
-                    <li>• Collaborate in real-time</li>
-                  </ul>
-                </div>
-
-                {/* Actions */}
-                <button
-                  onClick={handleClose}
-                  className="w-full rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                >
-                  Go to My Grids
-                </button>
               </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+
+              {/* Info Box */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
+                <p className="text-sm text-blue-200">
+                  <strong>Next Steps:</strong> The grid will appear in your sidebar.
+                  Connect with members and start collaborating!
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleFinish}>
+                  Go to My Grids
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

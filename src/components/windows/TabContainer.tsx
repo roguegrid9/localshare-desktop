@@ -19,7 +19,6 @@ export function TabContainer({
   const {
     activateTab,
     closeTab,
-    createWelcomeTab,
     updateTab,
   } = useWindowState();
 
@@ -50,11 +49,6 @@ export function TabContainer({
     try {
       await closeTab(window.id, tab.id);
       
-      // Clear the selection in AppShell after closing tab
-      if (onTabActivated) {
-        // Call with empty content to clear selection
-        onTabActivated({ type: 'Welcome', data: {} });
-      }
     } catch (error) {
       console.error('Failed to close tab:', error);
     }
@@ -62,20 +56,20 @@ export function TabContainer({
 
   if (window.tabs.length === 0) {
     return (
-      <div className="flex-1 flex flex-col h-full bg-[#0B0D10]">
-        {/* Empty tab bar */}
-        <div className="flex items-stretch bg-black border-b border-white/10 h-[70px]">
+      <div className="flex-1 flex flex-col h-full bg-[#0A0A0A]">
+        {/* Empty tab bar - VS Code style */}
+        <div className="flex items-stretch bg-[#000000] border-b border-border h-12">
           <div className="flex-1"></div>
         </div>
-        
+
         {/* Centered empty state */}
-        <div className="flex-1 flex items-center justify-center bg-[#0B0D10]" style={{ minHeight: '500px' }}>
+        <div className="flex-1 flex items-center justify-center bg-[#0A0A0A]" style={{ minHeight: '500px' }}>
           <div className="text-center max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 mx-auto">
-              <Plus className="w-8 h-8 text-white/40" />
+            <div className="w-16 h-16 rounded-full bg-bg-surface flex items-center justify-center mb-4 mx-auto">
+              <Plus className="w-8 h-8 text-text-tertiary" />
             </div>
-            <h3 className="text-white/80 font-medium mb-2">No processes or channels open</h3>
-            <p className="text-white/40 text-sm">Select something from the sidebar to get started</p>
+            <h3 className="text-text-primary font-medium mb-2">No processes or channels open</h3>
+            <p className="text-text-secondary text-sm">Select something from the sidebar to get started</p>
           </div>
         </div>
       </div>
@@ -83,10 +77,10 @@ export function TabContainer({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0B0D10]">
-      {/* Tab bar */}
-      <div className="flex items-end bg-black border-b border-white/10 h-[70px] px-2">
-        <div className="flex-1 flex items-end">
+    <div className="flex-1 flex flex-col h-full bg-[#0A0A0A]">
+      {/* Tab bar - VS Code style */}
+      <div className="flex items-stretch bg-[#000000] border-b border-border h-12">
+        <div className="flex-1 flex items-stretch">
           {window.tabs.map((tab) => (
             <DetachableTab
               key={tab.id}
@@ -100,7 +94,7 @@ export function TabContainer({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0B0D10]">
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0A0A0A]">
         {activeTab && (
           <TabContent
             tab={activeTab}

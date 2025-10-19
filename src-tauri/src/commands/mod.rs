@@ -13,6 +13,7 @@ pub mod windows;
 pub mod discovery;
 pub mod share;
 pub mod updater;
+pub mod relay;
 
 // Re-export all commands
 pub use auth::*;
@@ -28,3 +29,4 @@ pub use messaging::*;
 pub use media::*;
 pub use share::*;
 pub use updater::*;
+pub use relay::*;

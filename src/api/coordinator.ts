@@ -1,7 +1,7 @@
-// API client for RogueGrid9 coordinator server
+// API client for LocalShare coordinator server
 
 // For Tauri apps, always use the production API
-const API_BASE = 'https://roguegrid9-coordinator.fly.dev';
+const API_BASE = 'https://localshare-coordinator.fly.dev';
 
 // Debug: Log API base URL on module load
 console.log('🌐 API_BASE configured as:', API_BASE);

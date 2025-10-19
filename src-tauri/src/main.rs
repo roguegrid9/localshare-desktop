@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use roguegrid9::run;
+use localshare::run;
 
 fn main() {
     run();

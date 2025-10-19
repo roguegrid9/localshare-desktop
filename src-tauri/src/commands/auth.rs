@@ -251,7 +251,10 @@ const OAUTH_SUCCESS_HTML: &str = r#"
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authentication Successful - RogueGrid9</title>
+    <title>Authentication Successful - RogueGrid</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -260,20 +263,28 @@ const OAUTH_SUCCESS_HTML: &str = r#"
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0B0D10;
-            color: white;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #000000;
+            color: #E9ECF3;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
             padding: 20px;
+            overflow: hidden;
         }
 
         .container {
-            background: #111319;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
+            position: relative;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(122, 140, 171, 0.25);
+            box-shadow:
+                0 8px 32px 0 rgba(0, 0, 0, 0.37),
+                inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+                0 0 0 1px rgba(58, 175, 255, 0.1);
+            border-radius: 10px;
             padding: 48px 40px;
             max-width: 440px;
             width: 100%;
@@ -281,62 +292,72 @@ const OAUTH_SUCCESS_HTML: &str = r#"
         }
 
         .logo {
-            width: 48px;
-            height: 48px;
+            width: 56px;
+            height: 56px;
             margin: 0 auto 24px;
-            background: linear-gradient(135deg, #FF8A00 0%, #FF3D00 100%);
-            border-radius: 12px;
+            background: linear-gradient(135deg, #3AAFFF 0%, #7B5CFF 100%);
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: scaleIn 0.3s ease-out;
+            box-shadow:
+                0 0 0 1px rgba(58, 175, 255, 0.3),
+                0 0 20px rgba(123, 92, 255, 0.5),
+                0 4px 16px rgba(0, 0, 0, 0.3);
+            animation: scaleIn 0.4s ease-out, pulse 2s ease-in-out infinite;
         }
 
         .logo svg {
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             color: white;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
         }
 
         h1 {
+            font-family: 'IBM Plex Sans', sans-serif;
             font-size: 24px;
             font-weight: 600;
             margin-bottom: 8px;
-            color: white;
+            color: #E9ECF3;
             animation: fadeInUp 0.4s ease-out 0.1s both;
         }
 
         p {
             font-size: 15px;
-            color: rgba(255, 255, 255, 0.6);
-            line-height: 1.6;
+            font-weight: 400;
+            color: #A4ACB9;
+            line-height: 1.5;
             margin-bottom: 32px;
             animation: fadeInUp 0.4s ease-out 0.2s both;
         }
 
         .status-box {
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid rgba(34, 197, 94, 0.2);
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.25);
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 24px;
             animation: fadeInUp 0.4s ease-out 0.3s both;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
         }
 
         .status-box .icon {
             display: inline-block;
             margin-right: 8px;
+            font-size: 16px;
+            color: #10B981;
         }
 
         .status-box .message {
-            color: rgba(34, 197, 94, 0.9);
+            color: #10B981;
             font-size: 14px;
             font-weight: 500;
         }
 
         .instructions {
             font-size: 13px;
-            color: rgba(255, 255, 255, 0.5);
+            color: #80889B;
             margin-bottom: 24px;
             animation: fadeInUp 0.4s ease-out 0.4s both;
         }
@@ -344,19 +365,31 @@ const OAUTH_SUCCESS_HTML: &str = r#"
         .close-button {
             width: 100%;
             padding: 12px 24px;
-            background: linear-gradient(135deg, #FF8A00 0%, #FF3D00 100%);
+            background: linear-gradient(135deg, #3AAFFF 0%, #7B5CFF 100%);
             border: none;
             border-radius: 8px;
             color: white;
+            font-family: 'Inter', sans-serif;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: opacity 0.2s;
+            transition: all 0.2s ease;
             animation: fadeInUp 0.4s ease-out 0.5s both;
+            box-shadow:
+                0 0 0 1px rgba(58, 175, 255, 0.3),
+                0 4px 12px rgba(123, 92, 255, 0.4);
         }
 
         .close-button:hover {
-            opacity: 0.9;
+            transform: scale(1.02);
+            box-shadow:
+                0 0 0 1px rgba(58, 175, 255, 0.5),
+                0 0 20px rgba(123, 92, 255, 0.6),
+                0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .close-button:active {
+            transform: scale(0.98);
         }
 
         @keyframes scaleIn {
@@ -380,10 +413,62 @@ const OAUTH_SUCCESS_HTML: &str = r#"
                 transform: translateY(0);
             }
         }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow:
+                    0 0 0 1px rgba(58, 175, 255, 0.3),
+                    0 0 20px rgba(123, 92, 255, 0.5),
+                    0 4px 16px rgba(0, 0, 0, 0.3);
+            }
+            50% {
+                box-shadow:
+                    0 0 0 1px rgba(58, 175, 255, 0.5),
+                    0 0 30px rgba(123, 92, 255, 0.7),
+                    0 4px 20px rgba(0, 0, 0, 0.4);
+            }
+        }
+
+        /* Ambient glow orb in background */
+        .orb {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            filter: blur(80px);
+            pointer-events: none;
+            opacity: 0.2;
+            z-index: -1;
+        }
+
+        .orb-1 {
+            top: -150px;
+            right: -150px;
+            background: radial-gradient(
+                circle at center,
+                rgba(58, 175, 255, 0.6) 0%,
+                rgba(58, 175, 255, 0.2) 50%,
+                transparent 70%
+            );
+        }
+
+        .orb-2 {
+            bottom: -150px;
+            left: -150px;
+            background: radial-gradient(
+                circle at center,
+                rgba(123, 92, 255, 0.55) 0%,
+                rgba(123, 92, 255, 0.18) 50%,
+                transparent 70%
+            );
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+
         <div class="logo">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
@@ -393,7 +478,7 @@ const OAUTH_SUCCESS_HTML: &str = r#"
         <h1>Successfully Authenticated</h1>
 
         <p>
-            You're all set! Return to RogueGrid9 to continue.
+            You're all set! Return to RogueGrid to continue.
         </p>
 
         <div class="status-box">
@@ -402,7 +487,7 @@ const OAUTH_SUCCESS_HTML: &str = r#"
         </div>
 
         <div class="instructions">
-            You can safely close this window or it will close automatically.
+            This window will close automatically in a moment.
         </div>
 
         <button class="close-button" onclick="tryClose()">Close Window</button>
@@ -433,10 +518,10 @@ const OAUTH_SUCCESS_HTML: &str = r#"
             }, 100);
         }
 
-        // Auto-close after 3 seconds
+        // Auto-close after 2 seconds (reduced from 3)
         setTimeout(() => {
             tryClose();
-        }, 3000);
+        }, 2000);
 
         // Also try to close when user clicks anywhere
         document.addEventListener('click', tryClose);

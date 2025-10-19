@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useMediaStreams } from '../../hooks/useMediaStreams';
 import { useWebRTCMedia } from '../../hooks/useWebRTCMedia';
 import { useP2P } from '../../context/P2PProvider';
-import { useToast } from '../ui/Toaster';
+import { toast } from '../ui/sonner';
 import MediaControls from '../media/MediaControls';
 import VideoCall from '../media/VideoCall';
 import ScreenShareOverlay from '../media/ScreenShareOverlay';
@@ -179,7 +179,6 @@ export default function MediaSessionManager({
   const [qualityPreset, setQualityPreset] = useState<MediaQualityPreset>('medium');
   
   const { sessions } = useP2P();
-  const toast = useToast();
   
   // Get media-enabled sessions
   const mediaSessions = Object.values(sessions).filter(session => 
@@ -191,10 +190,10 @@ export default function MediaSessionManager({
     try {
       setActiveCallSession(sessionId);
       setShowVideoCall(true);
-      toast('Starting video call...', 'info');
+      toast.info('Starting video call...');
     } catch (error) {
       console.error('Failed to start call:', error);
-      toast('Failed to start call', 'error');
+      toast.error('Failed to start call');
     }
   }, [toast]);
   
@@ -203,10 +202,10 @@ export default function MediaSessionManager({
     try {
       setActiveCallSession(sessionId);
       setShowVideoCall(true);
-      toast('Joining video call...', 'info');
+      toast.info('Joining video call...');
     } catch (error) {
       console.error('Failed to join call:', error);
-      toast('Failed to join call', 'error');
+      toast.error('Failed to join call');
     }
   }, [toast]);
   
@@ -216,10 +215,10 @@ export default function MediaSessionManager({
       setActiveCallSession(null);
       setShowVideoCall(false);
       setShowScreenShare(false);
-      toast('Call ended', 'info');
+      toast.info('Call ended');
     } catch (error) {
       console.error('Failed to end call:', error);
-      toast('Failed to end call', 'error');
+      toast.error('Failed to end call');
     }
   }, [toast]);
   

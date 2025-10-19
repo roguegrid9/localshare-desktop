@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Mic, MicOff, Volume2, Settings, Users, X, Minimize2, Phone, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Volume2, Users, Minimize2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useChannels } from '../../hooks/useChannels';
 import { useP2P } from '../../context/P2PProvider';
 import { useMediaStreams } from '../../hooks/useMediaStreams';
 import { useRustAudioStream } from '../../hooks/useRustAudioStream';
 import { useVoiceWebRTC } from '../../hooks/useVoiceWebRTC';
-import MediaControls from '../media/MediaControls';
+import { useUIStore } from '../../stores/useUIStore';
+import VoiceToolbar from '../voice/VoiceToolbar';
 import { AudioErrorBoundary } from '../media/AudioErrorBoundary';
+import { Spinner } from '../ui/spinner';
 
 interface VoiceChannelWindowProps {
   channelId: string;
@@ -54,6 +56,7 @@ export default function VoiceChannelWindow({
     audioSettings,
     saveAudioSettings
   } = useMediaStreams();
+  const { setVoiceChannel, setInCall } = useUIStore();
 
   // Get channel info
   const channel = getChannelById(channelId);
@@ -131,6 +134,11 @@ export default function VoiceChannelWindow({
       }
 
       setIsConnected(true);
+
+      // Update UI store for compact voice bar
+      setVoiceChannel(channelId);
+      setInCall(true);
+
       console.log('Voice channel joined successfully - hybrid audio active');
     } catch (error) {
       console.error('Failed to join voice channel:', error);
@@ -139,7 +147,7 @@ export default function VoiceChannelWindow({
     } finally {
       setIsConnecting(false);
     }
-  }, [channelId, gridId, isConnecting, isConnected, startAudio, connectToParticipant]);
+  }, [channelId, gridId, isConnecting, isConnected, startAudio, connectToParticipant, setVoiceChannel, setInCall]);
 
   // Leave voice channel
   const handleLeaveChannel = useCallback(async () => {
@@ -159,11 +167,16 @@ export default function VoiceChannelWindow({
 
       setIsConnected(false);
       setSessionId(null);
+
+      // Update UI store to hide compact voice bar
+      setVoiceChannel(undefined);
+      setInCall(false);
+
       console.log('Successfully left voice channel');
     } catch (error) {
       console.error('Failed to leave voice channel:', error);
     }
-  }, [isConnected, channelId, gridId, stopAudio]);
+  }, [isConnected, channelId, gridId, stopAudio, setVoiceChannel, setInCall]);
 
   // Handle mute toggle
   const handleMuteToggle = useCallback(async () => {
@@ -215,104 +228,50 @@ export default function VoiceChannelWindow({
     setParticipants([localParticipant, ...remoteParticipantList]);
   }, [mediaState.audio.enabled, mediaState.audio.muted, mediaState.audio.speaking, mediaState.audio.level, peerConnections, rustAudioActive]);
 
-  // Don't auto-join - let user explicitly click join button
-  // This prevents premature P2P session initialization
-  // useEffect(() => {
-  //   if (channel?.channel_type === 'voice' && !isConnected && !isConnecting) {
-  //     handleJoinChannel();
-  //   }
-  // }, [channel, isConnected, isConnecting, handleJoinChannel]);
+  // Auto-join voice channel when window opens
+  useEffect(() => {
+    if (channel?.channel_type === 'voice' && !isConnected && !isConnecting) {
+      handleJoinChannel();
+    }
+  }, [channel?.channel_type]); // Only depend on channel type to avoid re-joining
 
   if (!channel) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#0B0D10]">
-        <div className="text-white/60">Voice channel not found</div>
+      <div className="w-full h-full flex items-center justify-center bg-[#050507]">
+        <div className="text-[#A4ACB9]">Voice channel not found</div>
       </div>
     );
   }
 
   return (
     <AudioErrorBoundary>
-      <div className={`w-full h-full bg-[#0B0D10] flex flex-col ${className}`}>
+      <div className={`w-full h-full bg-[#050507] flex flex-col ${className}`}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#0E1116] border-b border-white/10">
+        <div className="flex items-center justify-between px-4 py-3 bg-[#0B0C10] border-b border-[#1C1E26]">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 bg-white/5 border border-white/10 rounded flex items-center justify-center">
-              <Volume2 className="w-4 h-4 text-white/70" />
+            <div className="w-6 h-6 bg-[#0B0C10] border border-[#1C1E26] rounded-[10px] flex items-center justify-center">
+              <Volume2 className="w-4 h-4 text-[#A4ACB9]" />
             </div>
             <div>
-              <h2 className="font-semibold text-white text-sm">{channel.name}</h2>
-              <div className="text-xs text-white/60">
+              <h2 className="font-semibold text-[#E9ECF3] text-sm">{channel.name}</h2>
+              <div className="text-xs text-[#A4ACB9] flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  isConnected ? 'bg-[#10B981]' :
+                  isConnecting ? 'bg-[#F59E0B]' : 'bg-[#DC2626]'
+                }`} />
                 {participants.length} participant{participants.length !== 1 ? 's' : ''}
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="p-2 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-              title="Voice Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-            
             {onMinimize && (
               <button
                 onClick={onMinimize}
-                className="p-2 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                className="p-2 rounded-[10px] hover:bg-[#050507] text-[#A4ACB9] hover:text-[#E9ECF3] transition-colors"
                 title="Minimize"
               >
                 <Minimize2 className="w-4 h-4" />
-              </button>
-            )}
-            
-            <button
-              onClick={onClose}
-              className="p-2 rounded hover:bg-red-500/20 text-white/60 hover:text-white transition-colors"
-              title="Close Voice Channel"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Connection Status Bar */}
-        <div className="px-4 py-2 bg-[#0E1116] border-b border-white/10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-green-400' :
-                isConnecting ? 'bg-yellow-400' : 'bg-red-400'
-              }`} />
-              <span className="text-xs text-white/60">
-                {isConnected ? 'Voice Connected' :
-                 isConnecting ? 'Connecting...' : 'Disconnected'}
-              </span>
-              {backendAvailable && (
-                <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
-                  HD Audio
-                </span>
-              )}
-            </div>
-            
-            {!isConnected && !isConnecting && (
-              <button
-                onClick={handleJoinChannel}
-                className="flex items-center gap-2 px-3 py-1 rounded bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition-colors border border-white/20"
-              >
-                <Phone className="w-3 h-3" />
-                Join Voice
-              </button>
-            )}
-            
-            {isConnected && (
-              <button
-                onClick={handleLeaveChannel}
-                className="flex items-center gap-2 px-3 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-white text-xs font-medium transition-colors border border-red-500/30"
-              >
-                <PhoneOff className="w-3 h-3" />
-                Leave
               </button>
             )}
           </div>
@@ -321,16 +280,23 @@ export default function VoiceChannelWindow({
         {/* Participants List */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 space-y-2">
-            {participants.map((participant) => (
+            {isConnecting && (
+              <div className="text-center py-12 text-[#A4ACB9]">
+                <Spinner className="w-16 h-16 mx-auto mb-4 text-[#3AAFFF]" />
+                <p className="text-sm font-medium">Connecting to voice channel...</p>
+              </div>
+            )}
+
+            {!isConnecting && participants.map((participant) => (
               <VoiceParticipantCard
                 key={participant.userId}
                 participant={participant}
                 onMuteToggle={participant.isLocal ? handleMuteToggle : undefined}
               />
             ))}
-            
-            {participants.length === 1 && isConnected && (
-              <div className="text-center py-12 text-white/40">
+
+            {participants.length === 1 && isConnected && !isConnecting && (
+              <div className="text-center py-12 text-[#A4ACB9]">
                 <Users className="w-16 h-16 mx-auto mb-4 opacity-20" />
                 <p className="text-sm font-medium mb-1">No one else is here</p>
                 <p className="text-xs opacity-75">Invite others to start talking!</p>
@@ -339,42 +305,29 @@ export default function VoiceChannelWindow({
           </div>
         </div>
 
-        {/* Bottom Controls Bar */}
-        {isConnected && (
-          <div className="p-3 bg-[#0E1116] border-t border-white/10">
-            <div className="flex justify-center">
-              {sessionId && (
-                <MediaControls
-                  sessionId={sessionId}
-                  config={{
-                    showAudio: true,
-                    showVideo: false,
-                    showScreenShare: false,
-                    showSettings: true,
-                    size: 'md'
-                  }}
-                  className="bg-white/5 border border-white/10 rounded-lg p-2"
-                />
-              )}
-            </div>
-          </div>
-        )}
+        {/* Bottom Toolbar - Always visible */}
+        <VoiceToolbar
+          onSettingsClick={() => setShowSettings(!showSettings)}
+          overrideAudioLevel={mediaState.audio.level}
+          overrideSpeaking={mediaState.audio.speaking}
+          overrideMuted={mediaState.audio.muted}
+        />
 
         {/* Settings Panel */}
         {showSettings && (
-          <div className="absolute top-12 right-4 w-80 bg-[#0E1116] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
-            <div className="bg-white/5 px-4 py-3 border-b border-white/10">
-              <h3 className="font-semibold text-white">Voice Settings</h3>
+          <div className="absolute top-12 right-4 w-80 bg-[#0B0C10] border border-[#1C1E26] rounded-[10px] shadow-2xl overflow-hidden z-50">
+            <div className="bg-[#050507] px-4 py-3 border-b border-[#1C1E26]">
+              <h3 className="font-semibold text-[#E9ECF3]">Voice Settings</h3>
             </div>
-            
+
             <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
               {/* Input Volume */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-white/70 uppercase tracking-wide">
+                  <label className="text-xs font-semibold text-[#A4ACB9] uppercase tracking-wide">
                     Input Volume
                   </label>
-                  <span className="text-xs text-white/50">
+                  <span className="text-xs text-[#A4ACB9]">
                     {Math.round((audioSettings?.input_volume || 1) * 100)}%
                   </span>
                 </div>
@@ -385,21 +338,21 @@ export default function VoiceChannelWindow({
                   step="0.1"
                   value={audioSettings?.input_volume || 1}
                   onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer
-                    [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full 
-                    [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none"
+                  className="w-full h-2 bg-[#1C1E26] rounded-[10px] appearance-none cursor-pointer
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#3AAFFF] [&::-webkit-slider-thumb]:cursor-pointer
+                    [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full
+                    [&::-moz-range-thumb]:bg-[#3AAFFF] [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none"
                 />
               </div>
 
               {/* Voice Activity */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-white/70 uppercase tracking-wide">
+                  <label className="text-xs font-semibold text-[#A4ACB9] uppercase tracking-wide">
                     Voice Activity Threshold
                   </label>
-                  <span className="text-xs text-white/50">
+                  <span className="text-xs text-[#A4ACB9]">
                     {Math.round((audioSettings?.voice_activation_threshold || 0.1) * 100)}%
                   </span>
                 </div>
@@ -413,9 +366,9 @@ export default function VoiceChannelWindow({
                     const newSettings = { ...audioSettings, voice_activation_threshold: parseFloat(e.target.value) };
                     saveAudioSettings(newSettings);
                   }}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer"
+                  className="w-full h-2 bg-[#1C1E26] rounded-[10px] appearance-none cursor-pointer
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#3AAFFF] [&::-webkit-slider-thumb]:cursor-pointer"
                 />
               </div>
 
@@ -430,7 +383,7 @@ export default function VoiceChannelWindow({
                     saveAudioSettings(newSettings);
                   }}
                 />
-                
+
                 <SettingsToggle
                   label="Echo Cancellation"
                   description="Prevents audio feedback"
@@ -440,7 +393,7 @@ export default function VoiceChannelWindow({
                     saveAudioSettings(newSettings);
                   }}
                 />
-                
+
                 <SettingsToggle
                   label="Auto Gain Control"
                   description="Automatically adjusts input levels"
@@ -450,7 +403,7 @@ export default function VoiceChannelWindow({
                     saveAudioSettings(newSettings);
                   }}
                 />
-                
+
                 <SettingsToggle
                   label="Push to Talk"
                   description="Hold a key to transmit audio"
@@ -462,11 +415,11 @@ export default function VoiceChannelWindow({
                 />
               </div>
             </div>
-            
-            <div className="p-3 bg-white/5 border-t border-white/10">
+
+            <div className="p-3 bg-[#050507] border-t border-[#1C1E26]">
               <button
                 onClick={() => setShowSettings(false)}
-                className="w-full py-2 rounded bg-white/10 hover:bg-white/15 text-white text-sm font-medium transition-colors border border-white/20"
+                className="w-full py-2 rounded-[10px] bg-[#0B0C10] hover:bg-[#1C1E26] text-[#E9ECF3] text-sm font-medium transition-colors border border-[#1C1E26]"
               >
                 Done
               </button>
@@ -478,12 +431,12 @@ export default function VoiceChannelWindow({
   );
 }
 
-// Discord-style settings toggle component
-function SettingsToggle({ 
-  label, 
-  description, 
-  checked, 
-  onChange 
+// Settings toggle component
+function SettingsToggle({
+  label,
+  description,
+  checked,
+  onChange
 }: {
   label: string;
   description: string;
@@ -493,18 +446,18 @@ function SettingsToggle({
   return (
     <div className="flex items-center justify-between">
       <div className="flex-1">
-        <div className="text-sm font-medium text-white">{label}</div>
-        <div className="text-xs text-white/50">{description}</div>
+        <div className="text-sm font-medium text-[#E9ECF3]">{label}</div>
+        <div className="text-xs text-[#A4ACB9]">{description}</div>
       </div>
       <button
         onClick={() => onChange(!checked)}
         className={`w-10 h-6 rounded-full transition-colors relative ${
-          checked ? 'bg-white/20 border border-white/30' : 'bg-white/5 border border-white/10'
+          checked ? 'bg-[#3AAFFF]/20 border border-[#3AAFFF]/40' : 'bg-[#1C1E26] border border-[#1C1E26]'
         }`}
       >
         <div
-          className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${
-            checked ? 'translate-x-5' : 'translate-x-1'
+          className={`w-4 h-4 rounded-full absolute top-1 transition-transform ${
+            checked ? 'bg-[#3AAFFF] translate-x-5' : 'bg-[#A4ACB9] translate-x-1'
           }`}
         />
       </button>
@@ -512,33 +465,33 @@ function SettingsToggle({
   );
 }
 
-// Discord-style participant card
-function VoiceParticipantCard({ 
-  participant, 
-  onMuteToggle 
-}: { 
-  participant: VoiceParticipant; 
+// Voice participant card component
+function VoiceParticipantCard({
+  participant,
+  onMuteToggle
+}: {
+  participant: VoiceParticipant;
   onMuteToggle?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 p-2 rounded hover:bg-white/5 transition-colors group">
+    <div className="flex items-center gap-3 p-2 rounded-[10px] hover:bg-[#0B0C10] transition-colors group">
       {/* Avatar with speaking ring */}
       <div className="relative">
         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200 ${
-          participant.isSpeaking 
-            ? 'bg-white/20 text-white ring-2 ring-white/30 ring-offset-2 ring-offset-[#0B0D10]' 
+          participant.isSpeaking
+            ? 'bg-[#3AAFFF]/30 text-[#E9ECF3] ring-2 ring-[#3AAFFF]/40 ring-offset-2 ring-offset-[#050507]'
             : participant.audioEnabled
-              ? 'bg-green-500/30 text-white'
-              : 'bg-white/10 text-white/60'
+              ? 'bg-[#10B981]/30 text-[#E9ECF3]'
+              : 'bg-[#1C1E26] text-[#A4ACB9]'
         }`}>
           {participant.displayName[0]?.toUpperCase() || '?'}
         </div>
-        
+
         {/* Mic status indicator */}
-        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0B0D10] flex items-center justify-center ${
-          participant.audioEnabled && !participant.isMuted 
-            ? 'bg-green-400' 
-            : 'bg-red-400'
+        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#050507] flex items-center justify-center ${
+          participant.audioEnabled && !participant.isMuted
+            ? 'bg-[#10B981]'
+            : 'bg-[#DC2626]'
         }`}>
           {participant.audioEnabled && !participant.isMuted ? (
             <Mic className="w-1.5 h-1.5 text-white" />
@@ -547,43 +500,43 @@ function VoiceParticipantCard({
           )}
         </div>
       </div>
-      
+
       {/* Participant Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-white text-sm truncate">
+          <span className="font-medium text-[#E9ECF3] text-sm truncate">
             {participant.displayName}
             {participant.isLocal && (
-              <span className="text-white/50 font-normal"> (You)</span>
+              <span className="text-[#A4ACB9] font-normal"> (You)</span>
             )}
           </span>
-          
+
           {participant.connectionState === 'connecting' && (
-            <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+            <span className="text-xs text-[#F59E0B] bg-[#F59E0B]/10 px-2 py-0.5 rounded-full">
               Connecting
             </span>
           )}
         </div>
-        
+
         {/* Audio level bar */}
         {participant.audioEnabled && !participant.isMuted && (
-          <div className="mt-1 w-full h-1 bg-white/10 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-white/40 transition-all duration-100"
+          <div className="mt-1 w-full h-1 bg-[#1C1E26] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#3AAFFF] transition-all duration-100"
               style={{ width: `${(participant.audioLevel || 0) * 100}%` }}
             />
           </div>
         )}
       </div>
-      
+
       {/* Local Controls */}
       {participant.isLocal && onMuteToggle && (
         <button
           onClick={onMuteToggle}
-          className={`p-1.5 rounded transition-colors opacity-0 group-hover:opacity-100 ${
+          className={`p-1.5 rounded-[10px] transition-colors opacity-0 group-hover:opacity-100 ${
             participant.isMuted
-              ? 'bg-red-500/20 hover:bg-red-500/30 text-white border border-red-500/30'
-              : 'bg-white/10 hover:bg-white/15 text-white/70 border border-white/20'
+              ? 'bg-[#DC2626]/20 hover:bg-[#DC2626]/30 text-[#E9ECF3] border border-[#DC2626]/30'
+              : 'bg-[#0B0C10] hover:bg-[#1C1E26] text-[#A4ACB9] border border-[#1C1E26]'
           }`}
           title={participant.isMuted ? 'Unmute' : 'Mute'}
         >

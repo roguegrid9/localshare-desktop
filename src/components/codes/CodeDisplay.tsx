@@ -2,7 +2,7 @@
 import { useState } from "react";
 import type { ResourceAccessCode } from "../../types/codes";
 import { useResourceCodeCommands } from "../../hooks/useResourceCodeCommands";
-import { useToast } from "../ui/Toaster";
+import { toast } from "../ui/sonner";
 
 interface CodeDisplayProps {
   code: ResourceAccessCode;
@@ -17,17 +17,16 @@ function cx(...parts: Array<string | false | null | undefined>) {
 export default function CodeDisplay({ code, shareableUrl, onClose }: CodeDisplayProps) {
   const [copied, setCopied] = useState<'code' | 'url' | null>(null);
   const { copyCodeToClipboard, getExpiryStatus, getUsageStatus } = useResourceCodeCommands();
-  const toast = useToast();
 
   const handleCopyCode = async () => {
     try {
       await copyCodeToClipboard(code.access_code);
       setCopied('code');
-      toast("Access code copied to clipboard!", "success");
+      toast.success("Access code copied to clipboard!");
       setTimeout(() => setCopied(null), 2000);
     } catch (error) {
       console.error("Failed to copy code:", error);
-      toast("Failed to copy code", "error");
+      toast.error("Failed to copy code");
     }
   };
 
@@ -37,11 +36,11 @@ export default function CodeDisplay({ code, shareableUrl, onClose }: CodeDisplay
     try {
       await navigator.clipboard.writeText(shareableUrl);
       setCopied('url');
-      toast("Shareable link copied to clipboard!", "success");
+      toast.success("Shareable link copied to clipboard!");
       setTimeout(() => setCopied(null), 2000);
     } catch (error) {
       console.error("Failed to copy URL:", error);
-      toast("Failed to copy link", "error");
+      toast.error("Failed to copy link");
     }
   };
 

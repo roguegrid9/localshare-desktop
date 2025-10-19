@@ -1,7 +1,7 @@
 // src/components/permissions/PermissionManager.tsx
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useToast } from "../ui/Toaster";
+import { toast } from "../ui/sonner";
 
 type GridMember = {
   user_id: string;
@@ -77,7 +77,6 @@ function MemberPermissionEditor({
 }) {
   const [loading, setLoading] = useState(false);
   const [permissions, setPermissions] = useState<UpdateMemberPermissionsRequest>({});
-  const toast = useToast();
 
   const handleSave = async () => {
     try {
@@ -87,12 +86,12 @@ function MemberPermissionEditor({
         memberId: member.user_id,
         permissions
       });
-      toast("Member permissions updated successfully", "success");
+      toast.success("Member permissions updated successfully");
       onUpdate();
       onClose();
     } catch (error) {
       console.error("Failed to update member permissions:", error);
-      toast("Failed to update permissions", "error");
+      toast.error("Failed to update permissions");
     } finally {
       setLoading(false);
     }
@@ -240,18 +239,17 @@ function GridSettingsEditor({
 }) {
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<UpdateGridSettingsRequest>({});
-  const toast = useToast();
 
   const handleSave = async () => {
     try {
       setLoading(true);
       await invoke("update_grid_settings", { gridId, settings });
-      toast("Grid settings updated successfully", "success");
+      toast.success("Grid settings updated successfully");
       onUpdate();
       onClose();
     } catch (error) {
       console.error("Failed to update grid settings:", error);
-      toast("Failed to update settings", "error");
+      toast.error("Failed to update settings");
     } finally {
       setLoading(false);
     }

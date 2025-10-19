@@ -4,6 +4,7 @@ import { Volume2, Users, Mic, Settings, ExternalLink } from 'lucide-react';
 import { useChannels } from '../../hooks/useChannels';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useP2P } from '../../context/P2PProvider';
+import { useUIStore } from '../../stores/useUIStore';
 import type { ChannelInfo } from '../../types/messaging';
 
 interface VoiceChannelViewProps {
@@ -18,6 +19,7 @@ export function VoiceChannelView({ gridId, channelId }: VoiceChannelViewProps) {
   const { getChannelById, channels } = useChannels(gridId);
   const { createVoiceChannelTab } = useWindowManager();
   const { activeCalls, initializeMediaSession } = useP2P();
+  const { setVoiceChannel, setInCall } = useUIStore();
   
   const channel = getChannelById(channelId);
   
@@ -35,17 +37,21 @@ export function VoiceChannelView({ gridId, channelId }: VoiceChannelViewProps) {
   // Quick join voice channel (without opening window)
   const handleQuickJoin = useCallback(async () => {
     if (!channel) return;
-    
+
     try {
       const voiceSessionId = `voice_${channelId}`;
       setSessionId(voiceSessionId);
-      
+
       await initializeMediaSession(voiceSessionId);
       setIsConnected(true);
+
+      // Update UI store for compact voice bar
+      setVoiceChannel(channelId);
+      setInCall(true);
     } catch (error) {
       console.error('Failed to join voice channel:', error);
     }
-  }, [channel, channelId, initializeMediaSession]);
+  }, [channel, channelId, initializeMediaSession, setVoiceChannel, setInCall]);
   
   // Open voice channel in dedicated tab
   const handleOpenVoiceWindow = useCallback(async () => {

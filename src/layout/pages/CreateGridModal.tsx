@@ -1,9 +1,17 @@
-// Enhanced CreateGridModal.tsx with simplified flow
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useToast } from "../../components/ui/Toaster";
-import ShareButton from "../../components/codes/ShareButton";
-import { ResourceType } from "../../types/codes";
+import { toast } from "sonner";
+import { Copy, Check } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 
 type CreateGridModalProps = {
   open: boolean;
@@ -37,61 +45,33 @@ type CreateGridResponse = {
   invite_code?: string;
 };
 
-type WizardStep = 1 | 2;
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
 export default function CreateGridModal({ open, onClose, onSuccess }: CreateGridModalProps) {
-  const [currentStep, setCurrentStep] = useState<WizardStep>(1);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    grid_type: "",
-    max_members: 10,
-    is_public: false,
-  });
+  const [gridName, setGridName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createdGrid, setCreatedGrid] = useState<CreateGridResponse | null>(null);
-  const toast = useToast();
+  const [copied, setCopied] = useState(false);
 
-  const stepTitles = {
-    1: "Grid Settings",
-    2: "Complete"
-  };
+  const handleCreateGrid = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  const handleCreateGrid = () => {
-    if (!formData.name.trim()) {
-      toast("Grid name is required", "error");
+    if (!gridName.trim()) {
+      toast.error("Grid name is required");
       return;
     }
-    createGrid();
-  };
 
-  const createGrid = async () => {
     try {
       setIsCreating(true);
-      
+
       const request: CreateGridRequest = {
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        grid_type: formData.grid_type || undefined,
-        max_members: formData.max_members,
-        is_public: formData.is_public,
+        name: gridName.trim(),
       };
 
-      console.log("Creating grid with request:", request);
-
       const response = await invoke<CreateGridResponse>("create_grid", { request });
-
-      console.log("Grid created successfully:", response);
       setCreatedGrid(response);
-      setCurrentStep(2);
-      
+
     } catch (error) {
       console.error("Failed to create grid:", error);
-      toast(`Failed to create grid: ${error}`, "error");
+      toast.error(`Failed to create grid: ${error}`);
     } finally {
       setIsCreating(false);
     }
@@ -99,231 +79,138 @@ export default function CreateGridModal({ open, onClose, onSuccess }: CreateGrid
 
   const handleClose = () => {
     if (!isCreating) {
-      // Reset everything when closing
-      setCurrentStep(1);
+      setGridName("");
       setCreatedGrid(null);
-      setFormData({
-        name: "",
-        description: "",
-        grid_type: "",
-        max_members: 10,
-        is_public: false,
-      });
+      setCopied(false);
       onClose();
     }
   };
 
   const handleFinish = () => {
-    // This will trigger the grid to be added to the sidebar and selected
     onSuccess(createdGrid?.grid.id);
     handleClose();
   };
 
-  const copyInviteCode = async (inviteCode: string) => {
+  const copyInviteCode = async () => {
+    const inviteCode = createdGrid?.invite_code || createdGrid?.grid.invite_code;
+    if (!inviteCode) return;
+
     try {
       await navigator.clipboard.writeText(inviteCode);
-      toast("Invite code copied to clipboard!", "success");
+      setCopied(true);
+      toast.success("Invite code copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error("Failed to copy invite code:", error);
-      toast("Failed to copy invite code", "error");
+      toast.error("Failed to copy invite code");
     }
   };
 
-  if (!open) return null;
+  const inviteCode = createdGrid?.invite_code || createdGrid?.grid.invite_code;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-md mx-4">
-        <div className="rounded-xl border border-white/10 bg-[#111319] p-6 shadow-2xl">
-          {/* Header with Progress */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-semibold">Create New Grid</h2>
-              <p className="text-sm text-white/60">{stepTitles[currentStep]}</p>
-            </div>
-            <button
-              onClick={handleClose}
-              disabled={isCreating}
-              className="rounded-lg p-1 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-50"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md">
+        {!createdGrid ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Create New Grid</DialogTitle>
+              <DialogDescription>
+                Create a collaborative workspace for your team
+              </DialogDescription>
+            </DialogHeader>
 
-          {/* Progress Bar */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              {[1, 2].map((step) => (
-                <div
-                  key={step}
-                  className={cx(
-                    "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium",
-                    step <= currentStep
-                      ? "bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] text-white"
-                      : "bg-white/10 text-white/40"
-                  )}
+            <form onSubmit={handleCreateGrid} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="grid-name">
+                  Grid Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="grid-name"
+                  value={gridName}
+                  onChange={(e) => setGridName(e.target.value)}
+                  placeholder="e.g., Dev Team, Gaming Squad, Study Group"
+                  maxLength={50}
+                  disabled={isCreating}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleClose}
+                  disabled={isCreating}
                 >
-                  {step}
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isCreating || !gridName.trim()}
+                >
+                  {isCreating ? "Creating..." : "Create Grid"}
+                </Button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/20">
+                  <Check className="h-5 w-5 text-green-500" />
                 </div>
-              ))}
-            </div>
-            <div className="w-full bg-white/10 rounded-full h-1">
-              <div
-                className="bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] h-1 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / 2) * 100}%` }}
-              />
-            </div>
-          </div>
+                Grid Created Successfully!
+              </DialogTitle>
+              <DialogDescription>
+                {createdGrid.grid.name}
+              </DialogDescription>
+            </DialogHeader>
 
-          {/* Step Content */}
-          <div className="space-y-4 mb-6">
-            {currentStep === 1 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium mb-4">Basic Information</h3>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Grid Name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="e.g., Dev Team, Gaming Squad, Study Group"
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none"
-                    maxLength={50}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="What's this grid for? (optional)"
-                    rows={3}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-white/20 focus:outline-none resize-none"
-                    maxLength={200}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Grid Type</label>
-                  <select
-                    value={formData.grid_type}
-                    onChange={(e) => setFormData(prev => ({ ...prev, grid_type: e.target.value }))}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-white/20 focus:outline-none"
+            <div className="space-y-4">
+              {/* Invite Code Display */}
+              <div className="space-y-2">
+                <Label>Invite Code</Label>
+                <p className="text-sm text-muted-foreground">
+                  Share this code with others to join your grid
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-md border bg-muted px-4 py-3 font-mono text-2xl font-semibold tracking-wider text-center">
+                    {inviteCode}
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={copyInviteCode}
+                    className="h-12 w-12"
                   >
-                    <option value="">General</option>
-                    <option value="development">Development</option>
-                    <option value="gaming">Gaming</option>
-                    <option value="study">Study Group</option>
-                    <option value="work">Work Team</option>
-                    <option value="creative">Creative Project</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Maximum Members</label>
-                  <select
-                    value={formData.max_members}
-                    onChange={(e) => setFormData(prev => ({ ...prev, max_members: parseInt(e.target.value) }))}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-white/20 focus:outline-none"
-                  >
-                    <option value={5}>5 members</option>
-                    <option value={10}>10 members</option>
-                    <option value={20}>20 members</option>
-                    <option value={50}>50 members</option>
-                    <option value={100}>100 members</option>
-                  </select>
+                    {copied ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
-            )}
 
-            {/* Step 2: Success */}
-            {currentStep === 2 && createdGrid && (
-              <div className="space-y-4">
-                <div className="text-center mb-4">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-medium mb-2">Grid Created Successfully!</h3>
-                  <p className="text-white/60">{createdGrid.grid.name}</p>
-                </div>
-
-                {/* Basic Invite Code */}
-                <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-                  <div className="text-center mb-3">
-                    <h4 className="font-medium mb-1">Invite Code</h4>
-                    <p className="text-sm text-white/60">Share this code with others to join your grid</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-center text-lg tracking-wider">
-                      {createdGrid.invite_code || createdGrid.grid.invite_code}
-                    </div>
-                    <button
-                      onClick={() => copyInviteCode(createdGrid.invite_code || createdGrid.grid.invite_code || "")}
-                      className="rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-3 py-2 text-sm font-medium text-white hover:opacity-90"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-
-                {/* Next Steps */}
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-green-500/20 bg-green-500/10 p-3">
-                    <p className="text-sm text-green-200">
-                      <strong>Ready to go!</strong> Your grid will appear in the sidebar and you can start adding processes and channels.
-                    </p>
-                  </div>
-
-                  <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3">
-                    <p className="text-sm text-orange-200 mb-2">
-                      <strong>💡 Want to share your grid?</strong>
-                    </p>
-                    <p className="text-xs text-orange-200/80">
-                      After adding processes and channels, you can create a public share from the Grid Management page. Grid sharing creates a landing page where others can access your shared resources via a custom subdomain!
-                    </p>
-                  </div>
-                </div>
+              {/* Info Box */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
+                <p className="text-sm text-blue-200">
+                  <strong>Ready to go!</strong> Your grid will appear in the sidebar.
+                  You can start adding processes and channels.
+                </p>
               </div>
-            )}
-          </div>
 
-          {/* Navigation Buttons */}
-          <div className="flex gap-3">
-            {currentStep === 1 ? (
-              <button
-                onClick={handleCreateGrid}
-                disabled={isCreating || !formData.name.trim()}
-                className="w-full rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {isCreating ? "Creating..." : "Create Grid"}
-              </button>
-            ) : (
-              <button
-                onClick={handleFinish}
-                className="w-full rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-              >
-                Open Grid
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+              <div className="flex justify-end">
+                <Button onClick={handleFinish}>
+                  Open Grid
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

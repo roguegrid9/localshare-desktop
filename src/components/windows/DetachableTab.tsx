@@ -78,11 +78,11 @@ export function DetachableTab({
         data-tab-id={tab.id}
         onClick={onClick}
         className={cx(
-          "relative flex items-center gap-2 px-4 py-2 min-w-[160px] max-w-[280px] cursor-pointer transition-all duration-200",
-          "select-none rounded-t-lg mx-[1px] mt-1",
+          "relative flex items-center gap-2 px-4 h-full min-w-[160px] max-w-[280px] cursor-pointer transition-all duration-200",
+          "select-none border-r border-border/30",
           isActive
-            ? "bg-[#0B0D10] text-white shadow-lg border-t-2 border-t-blue-500"
-            : "bg-[#2D3748] text-white/90 hover:bg-[#374151] border-t-2 border-t-transparent hover:border-t-white/20"
+            ? "bg-[#0A0A0A] text-text-primary border-b border-b-[#0A0A0A]"
+            : "bg-[#1C1E26] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
         )}
         title={tab.title}
       >
@@ -102,7 +102,7 @@ export function DetachableTab({
             onClick={handleCloseClick}
             onMouseDown={(e) => console.log('Close button mouse down', e)}
             onMouseUp={(e) => console.log('Close button mouse up', e)}
-            className="flex items-center justify-center w-5 h-5 text-white/70 hover:text-red-400 hover:bg-red-500/20 rounded transition-colors ml-2"
+            className="flex items-center justify-center w-5 h-5 text-text-secondary hover:text-red-400 hover:bg-red-500/20 rounded transition-all duration-200 ml-2"
             title="Close tab"
             type="button"
           >

@@ -117,12 +117,33 @@ export interface ProcessConfigModalProps {
 // ============================================================================
 
 export type GridProcessStatus = 'hosted' | 'orphaned' | 'inactive';
-export type LocalProcessStatus = 'hosting' | 'connected' | 'available' | 'unavailable';
+export type LocalProcessStatus = 'hosting' | 'connected' | 'available' | 'p2p_only' | 'unavailable';
+export type AvailabilityStatus = 'available' | 'p2p_only' | 'offline';
 export type RegistrationState = 'pending' | 'registered' | 'failed' | 'local_only';
 
 export interface ProcessAvailability {
   process_id: string;
   grid_id: string;
+
+  // Running state
+  is_running: boolean;
+
+  // Connectivity options
+  has_tunnel: boolean;
+  tunnel_url?: string;
+  relay_available: boolean;
+  host_has_relay: boolean;
+  guest_has_relay: boolean;
+
+  // NAT status
+  host_nat_type: string;
+  host_needs_relay: boolean;
+  guest_nat_type: string;
+  guest_needs_relay: boolean;
+  p2p_compatible: boolean;
+
+  // Overall availability
+  availability_status: AvailabilityStatus;
 
   // Grid-level state
   grid_status: GridProcessStatus;

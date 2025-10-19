@@ -1,10 +1,10 @@
 [package]
-name = "roguegrid9"
+name = "localshare"
 version = "0.1.5"
-description = "RogueGrid9 Desktop Application"
+description = "LocalShare Desktop Application"
 authors = ["Peter Kozikowski"]
 license = "MIT"
-repository = "https://github.com/yourusername/roguegrid9"
+repository = "https://github.com/yourusername/localshare"
 edition = "2021"
 
 [build-dependencies]

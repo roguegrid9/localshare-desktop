@@ -27,9 +27,9 @@ export function useWindowState() {
       setMainWindowId(response.main_window_id);
       setIsInitialized(true);
       
-      console.log('Window manager initialized with', response.windows.length, 'windows');
+      // console.log('Window manager initialized with', response.windows.length, 'windows');
     } catch (error) {
-      console.error('Failed to initialize window manager:', error);
+      // console.error('Failed to initialize window manager:', error);
       setError(error as string);
     }
   }, [windowManager]);
@@ -41,7 +41,7 @@ export function useWindowState() {
       setWindows(response.windows);
       setMainWindowId(response.main_window_id);
     } catch (error) {
-      console.error('Failed to refresh windows:', error);
+      // console.error('Failed to refresh windows:', error);
       setError(error as string);
     }
   }, [windowManager]);
@@ -110,14 +110,14 @@ export function useWindowState() {
       try {
         // Listen for complete window state updates
         windowStateUnlisten = await listen<AllWindowsResponse>('window-state-updated', (event) => {
-          console.log('Window state updated:', event.payload);
+          // console.log('Window state updated:', event.payload);
           setWindows(event.payload.windows);
           setMainWindowId(event.payload.main_window_id);
         });
 
         // Listen for specific window change events
         windowChangeUnlisten = await listen<WindowStateChangeEvent>('window-state-change', (event) => {
-          console.log('Window state change:', event.payload);
+          // console.log('Window state change:', event.payload);
           
           // Only refresh for certain event types to prevent infinite loops
           const shouldRefresh = [
@@ -140,7 +140,7 @@ export function useWindowState() {
 
         // Listen for window closed events
         const windowClosedUnlisten = await listen<{ window_id: string }>('window-closed', (event) => {
-          console.log('Window closed:', event.payload);
+          // console.log('Window closed:', event.payload);
           setWindows(prev => prev.filter(w => w.id !== event.payload.window_id));
         });
 
@@ -148,7 +148,7 @@ export function useWindowState() {
           windowClosedUnlisten();
         };
       } catch (error) {
-        console.error('Failed to set up window event listeners:', error);
+        // console.error('Failed to set up window event listeners:', error);
         setError(error as string);
       }
     };
@@ -168,37 +168,37 @@ export function useWindowState() {
     const setupRestoreListeners = async () => {
       // Terminal state restore
       const terminalRestoreUnlisten = await listen<any>('restore-terminal-state', (event) => {
-        console.log('Restoring terminal state:', event.payload);
+        // console.log('Restoring terminal state:', event.payload);
         // Emit to terminal components if needed
       });
 
       // Channel state restore
       const channelRestoreUnlisten = await listen<any>('restore-channel-state', (event) => {
-        console.log('Restoring channel state:', event.payload);
+        // console.log('Restoring channel state:', event.payload);
         // Emit to channel components if needed
       });
 
       // Media state restore
       const mediaRestoreUnlisten = await listen<any>('restore-media-state', (event) => {
-        console.log('Restoring media state:', event.payload);
+        // console.log('Restoring media state:', event.payload);
         // Emit to media components if needed
       });
 
       // Process state restore
       const processRestoreUnlisten = await listen<any>('restore-process-state', (event) => {
-        console.log('Restoring process state:', event.payload);
+        // console.log('Restoring process state:', event.payload);
         // Emit to process components if needed
       });
 
       // DM state restore
       const dmRestoreUnlisten = await listen<any>('restore-dm-state', (event) => {
-        console.log('Restoring DM state:', event.payload);
+        // console.log('Restoring DM state:', event.payload);
         // Emit to DM components if needed
       });
 
       // Dashboard state restore
       const dashboardRestoreUnlisten = await listen<any>('restore-dashboard-state', (event) => {
-        console.log('Restoring dashboard state:', event.payload);
+        // console.log('Restoring dashboard state:', event.payload);
         // Emit to dashboard components if needed
       });
 

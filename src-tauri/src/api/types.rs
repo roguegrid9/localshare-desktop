@@ -979,6 +979,7 @@ pub struct CurrentUserResponse {
     pub email: String,
     pub username: Option<String>,
     pub display_name: String,
+    pub avatar_url: Option<String>,
     pub account_type: String,
     pub created_at: String,
     pub updated_at: String,
@@ -1289,6 +1290,7 @@ pub struct RelaySubscription {
     pub id: String,
     pub status: String,
     pub plan_type: String,
+    pub vps_id: Option<String>,
     pub bandwidth_used: i64,
     pub bandwidth_limit: i64,
     pub max_connections: i32,
@@ -1340,5 +1342,13 @@ pub struct CreateTunnelRequest {
     pub subdomain: String,
     pub local_port: u16,
     pub protocol: String,
+}
+
+// NAT status reporting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportNATStatusRequest {
+    pub nat_type: String,
+    pub needs_relay: bool,
+    pub connection_quality: String,
 }
 

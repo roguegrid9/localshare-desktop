@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { X, User, Save, Download } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import { useToast } from '../../components/ui/Toaster';
+import { toast } from '../../components/ui/sonner';
 import { getVersion } from '@tauri-apps/api/app';
+import { Spinner } from '../../components/ui/spinner';
 
 interface UserSettingsProps {
   onClose: () => void;
@@ -26,7 +27,6 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<string>('');
-  const toast = useToast();
 
   useEffect(() => {
     loadUserInfo();
@@ -50,7 +50,7 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
       setEditedDisplayName(info.display_name || '');
     } catch (error) {
       console.error('Failed to load user info:', error);
-      toast(`Failed to load user info: ${error}`, 'error');
+      toast.error(`Failed to load user info: ${error}`);
     } finally {
       setLoading(false);
     }
@@ -62,11 +62,11 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
     setIsSaving(true);
     try {
       await invoke('update_username', { username: editedUsername });
-      toast('Username updated successfully', 'success');
+      toast.success('Username updated successfully');
       loadUserInfo(); // Reload user info
     } catch (error) {
       console.error('Failed to update username:', error);
-      toast(`Failed to update username: ${error}`, 'error');
+      toast.error(`Failed to update username: ${error}`);
     } finally {
       setIsSaving(false);
     }
@@ -78,11 +78,11 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
     setIsSaving(true);
     try {
       await invoke('update_display_name', { displayName: editedDisplayName });
-      toast('Display name updated successfully', 'success');
+      toast.success('Display name updated successfully');
       loadUserInfo(); // Reload user info
     } catch (error) {
       console.error('Failed to update display name:', error);
-      toast(`Failed to update display name: ${error}`, 'error');
+      toast.error(`Failed to update display name: ${error}`);
     } finally {
       setIsSaving(false);
     }
@@ -94,13 +94,13 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
       const updateInfo = await invoke<{ version: string; current_version: string } | null>('check_for_updates');
 
       if (updateInfo) {
-        toast(`Update available: v${updateInfo.version}`, 'success');
+        toast.success(`Update available: v${updateInfo.version}`);
       } else {
-        toast('You\'re up to date!', 'success');
+        toast.success('You\'re up to date!');
       }
     } catch (error) {
       console.error('Failed to check for updates:', error);
-      toast(`Failed to check for updates: ${error}`, 'error');
+      toast.error(`Failed to check for updates: ${error}`);
     } finally {
       setCheckingUpdate(false);
     }
@@ -111,7 +111,7 @@ export default function UserSettings({ onClose }: UserSettingsProps) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
         <div className="bg-[#111319] rounded-xl border border-white/10 p-8">
           <div className="flex items-center gap-3 text-white">
-            <div className="w-5 h-5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+            <Spinner className="w-5 h-5" />
             <span>Loading...</span>
           </div>
         </div>

@@ -21,6 +21,18 @@ export function useNetworkStatus() {
       setError(null);
       const status = await invoke<NetworkStatus>('get_network_status');
       setNetworkStatus(status);
+
+      // Report NAT status to server
+      try {
+        await invoke('report_nat_status', {
+          natType: status.nat_type,
+          needsRelay: status.needs_relay,
+          connectionQuality: status.connection_quality,
+        });
+      } catch (reportErr) {
+        // Don't fail if NAT reporting fails - it's not critical
+        console.warn('Failed to report NAT status:', reportErr);
+      }
     } catch (err) {
       setError(err as string);
       console.error('Failed to get network status:', err);

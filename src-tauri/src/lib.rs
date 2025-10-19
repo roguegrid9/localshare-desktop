@@ -14,6 +14,7 @@ mod utils;
 mod websocket;
 mod codes;
 mod share;
+mod frp;
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 pub mod messaging;
@@ -55,6 +56,7 @@ use crate::windows::{
     create_media_channel_tab,
     create_process_tab,
     create_grid_dashboard_tab,
+    create_network_dashboard_tab,
     create_welcome_tab,
     get_active_tab,
     window_exists,
@@ -94,6 +96,9 @@ use crate::commands::media::{
 // Re-exports for easy access
 pub use commands::*;
 pub use state::app::AppState;
+use commands::relay::FRPState;
+use api::CoordinatorClient;
+use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -104,6 +109,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
+        .manage(FRPState {
+            client: Mutex::new(None),
+        })
+        .manage(CoordinatorClient::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -408,6 +417,7 @@ pub fn run() {
             send_p2p_data,
             get_network_status,
             auto_host_grid,
+            report_nat_status,
 
             // Grid Relay Commands
             get_grid_relay_config,
@@ -518,6 +528,7 @@ pub fn run() {
             create_media_channel_tab,
             create_process_tab,
             create_grid_dashboard_tab,
+            create_network_dashboard_tab,
             create_welcome_tab,
             get_active_tab,
             window_exists,
@@ -572,6 +583,20 @@ pub fn run() {
             get_share_status,
             handle_share_visitor,
             handle_visitor_disconnect,
+
+            // ============================================================================
+            // FRP RELAY & TUNNEL COMMANDS
+            // ============================================================================
+            start_relay_trial,
+            connect_frp_relay,
+            disconnect_frp_relay,
+            get_frp_status,
+            get_relay_subscription,
+            create_tunnel_command,
+            list_tunnels_command,
+            delete_tunnel_command,
+            check_subdomain_command,
+            detect_nat_type,
 
         ])
         .run(tauri::generate_context!())

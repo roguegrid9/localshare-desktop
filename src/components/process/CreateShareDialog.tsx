@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Globe, Lock, Clock, Users, Loader2, Check } from 'lucide-react';
+import { X, Globe, Lock, Clock, Users, Check } from 'lucide-react';
+import { Spinner } from '../ui/spinner';
 import {
   createProcessShare,
   checkSubdomainAvailability,
@@ -167,7 +168,7 @@ export function CreateShareDialog({
             </div>
             {checkingSubdomain && (
               <div className="flex items-center gap-2 mt-2 text-sm text-white/60">
-                <Loader2 className="w-3 h-3 animate-spin" />
+                <Spinner className="w-3 h-3" />
                 Checking availability...
               </div>
             )}
@@ -284,7 +285,7 @@ export function CreateShareDialog({
               disabled={isCreating || !subdomain || subdomainAvailable === false}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white px-4 py-2 rounded font-medium flex items-center justify-center gap-2"
             >
-              {isCreating && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isCreating && <Spinner className="w-4 h-4" />}
               {isCreating ? 'Creating...' : 'Create Share'}
             </button>
             <button

@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "RogueGrid9",
+  "productName": "LocalShare",
   "version": "0.1.5",
-  "identifier": "com.roguegrid9.app",
+  "identifier": "com.localshare.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build", 
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "RogueGrid9",
+        "title": "LocalShare",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -22,7 +22,8 @@
         "maximized": false,
         "center": true,
         "visible": true,
-        "devtools": true
+        "devtools": true,
+        "decorations": false
       }
     ],
     "security": {
@@ -40,6 +41,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": [
+      "resources/frp/**/*"
+    ],
     "createUpdaterArtifacts": true,
     "macOS": {
       "signingIdentity": null,
@@ -52,7 +56,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://roguegrid9-coordinator.fly.dev/updates/latest.json"
+        "https://localshare-coordinator.fly.dev/updates/latest.json"
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwRjNCN0MyM0NGQzMzMzAKUldRenc4OGpmRHNQQklNdTJnRjJud20vUDZlMTIyaW1Cejc0clJRWlBHZlBiVjc2NWRMSktzeUYK"

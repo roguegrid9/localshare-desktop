@@ -174,11 +174,17 @@ export function useWindowManager() {
     gridName: string,
     windowId?: string
   ): Promise<Tab> => {
-    return await invoke('create_grid_dashboard_tab', { 
-      gridId, 
-      gridName, 
-      windowId 
+    return await invoke('create_grid_dashboard_tab', {
+      gridId,
+      gridName,
+      windowId
     });
+  }, []);
+
+  const createNetworkDashboardTab = useCallback(async (
+    windowId?: string
+  ): Promise<Tab> => {
+    return await invoke('create_network_dashboard_tab', { windowId });
   }, []);
 
   const createWelcomeTab = useCallback(async (windowId?: string): Promise<Tab> => {
@@ -374,6 +380,7 @@ export function useWindowManager() {
     createProcessTab,
     createDirectMessageTab,
     createGridDashboardTab,
+    createNetworkDashboardTab,
     createWelcomeTab,
     
     // Helper functions
@@ -407,6 +414,7 @@ export function useWindowManager() {
     createProcessTab,
     createDirectMessageTab,
     createGridDashboardTab,
+    createNetworkDashboardTab,
     createWelcomeTab,
     createTabFromSelection,
     serializeWindowState,

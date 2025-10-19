@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useToast } from '../components/ui/Toaster';
+import { toast } from '../components/ui/sonner';
 
 interface VoicePeerConnection {
   userId: string;
@@ -31,7 +31,6 @@ interface VoiceWebRTCSignalPayload {
 export function useVoiceWebRTC({ channelId, gridId, localAudioStream }: UseVoiceWebRTCProps) {
   const [peerConnections, setPeerConnections] = useState<Map<string, VoicePeerConnection>>(new Map());
   const [remoteParticipants, setRemoteParticipants] = useState<string[]>([]);
-  const toast = useToast();
 
   // Send WebRTC signal via Tauri command
   const sendSignal = useCallback(async (toUserId: string, signalData: any) => {
@@ -124,9 +123,9 @@ export function useVoiceWebRTC({ channelId, gridId, localAudioStream }: UseVoice
       console.log(`Peer connection to ${participantId} state: ${pc.connectionState}`);
 
       if (pc.connectionState === 'connected') {
-        toast(`Connected to ${username || participantId}`, 'success');
+        toast.success(`Connected to ${username || participantId}`);
       } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        toast(`Disconnected from ${username || participantId}`, 'warning');
+        toast(`Disconnected from ${username || participantId}`);
       }
     };
 
@@ -175,7 +174,7 @@ export function useVoiceWebRTC({ channelId, gridId, localAudioStream }: UseVoice
 
     } catch (error) {
       console.error(`Failed to connect to ${participantId}:`, error);
-      toast(`Failed to connect to ${username || participantId}`, 'error');
+      toast.error(`Failed to connect to ${username || participantId}`);
     }
   }, [channelId, gridId, createPeerConnection, sendSignal, toast]);
 

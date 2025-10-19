@@ -1,15 +1,17 @@
 // Window management types that match the Rust backend
 
-export type TabContentType = 
+export type TabContentType =
   | { type: 'Terminal'; data: { session_id: string; grid_id?: string; title: string } }
   | { type: 'TextChannel'; data: { channel_id: string; grid_id: string; channel_name: string } }
   | { type: 'MediaChannel'; data: { channel_id: string; grid_id: string; channel_name: string; media_type: MediaType } }
   | { type: 'VoiceChannel'; data: { channel_id: string; grid_id: string; channel_name: string } }
   | { type: 'Process'; data: { process_id: string; grid_id: string; process_name: string } }
-  | { type: 'Container'; data: { container_id: string; grid_id: string; container_name: string } }  // ADD THIS LINE
+  | { type: 'Container'; data: { container_id: string; grid_id: string; container_name: string } }
   | { type: 'DirectMessage'; data: { conversation_id: string; user_name: string } }
   | { type: 'GridDashboard'; data: { grid_id: string; grid_name: string } }
-  | { type: 'Welcome'; data: {} };
+  | { type: 'NetworkDashboard' }
+  | { type: 'Subscription' }
+  | { type: 'Welcome' };
 
 export type MediaType = 'Voice' | 'Video' | 'Both';
 

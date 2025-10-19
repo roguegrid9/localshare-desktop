@@ -1,6 +1,7 @@
 // src/components/channels/TextChannel.tsx
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Hash, Send, Paperclip, Smile, ChevronDown, Loader2, X } from "lucide-react";
+import { Hash, Send, Paperclip, Smile, ChevronDown, X } from "lucide-react";
+import { Spinner } from '../ui/spinner';
 import { cx } from "../../utils/cx";
 import { useMessages } from "../../hooks/useMessages";
 import { useTypingIndicators } from "../../hooks/useTypingIndicators";
@@ -13,8 +14,8 @@ interface TextChannelProps {
 function DayDivider({ label }: { label: string }) {
   return (
     <div className="relative my-5 flex items-center justify-center">
-      <div className="h-px w-full bg-white/10" />
-      <span className="absolute px-3 py-1 text-xs rounded-full bg-[#0D0F14] border border-white/10 text-white/60 shadow-sm">
+      <div className="h-px w-full bg-[var(--border)]" />
+      <span className="absolute px-3 py-1 text-xs rounded-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-secondary)] shadow-sm">
         {label}
       </span>
     </div>
@@ -25,9 +26,9 @@ function TypingDots() {
   return (
     <div className="inline-flex items-center gap-1">
       <span className="sr-only">typing</span>
-      <span className="h-1.5 w-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:-0.2s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-white/50 animate-bounce" />
-      <span className="h-1.5 w-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0.2s]" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-secondary)] animate-bounce [animation-delay:-0.2s]" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-secondary)] animate-bounce" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-secondary)] animate-bounce [animation-delay:0.2s]" />
     </div>
   );
 }
@@ -61,7 +62,7 @@ function ReactionTray({
   return (
     <div
       ref={boxRef}
-      className="z-20 rounded-xl border border-white/10 bg-[#0E1117] shadow-xl px-2 py-1.5 flex flex-wrap gap-1.5"
+      className="z-20 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-xl px-2 py-1.5 flex flex-wrap gap-1.5"
       role="dialog"
       aria-label="Add reaction"
     >
@@ -69,14 +70,14 @@ function ReactionTray({
         <button
           key={e}
           onClick={() => onPick(e)}
-          className="text-base leading-none px-2 py-1 rounded-md hover:bg-white/10"
+          className="text-base leading-none px-2 py-1 rounded-md hover:bg-[var(--bg-hover)]"
         >
           {e}
         </button>
       ))}
       <button
         onClick={onClose}
-        className="ml-1 inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-white/10 hover:bg-white/10"
+        className="ml-1 inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-[var(--border)] hover:bg-[var(--bg-hover)]"
         aria-label="Close"
         title="Close"
       >
@@ -229,19 +230,19 @@ export default function TextChannel({ channelId }: TextChannelProps) {
           <div className="space-y-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
+                <div className="w-8 h-8 rounded-full bg-[var(--bg-muted)] animate-pulse" />
                 <div className="flex-1 space-y-2">
-                  <div className="w-40 h-3 rounded bg-white/10 animate-pulse" />
-                  <div className="w-full max-w-lg h-10 rounded-xl bg-white/5 border border-white/10 animate-pulse" />
+                  <div className="w-40 h-3 rounded bg-[var(--bg-muted)] animate-pulse" />
+                  <div className="w-full max-w-lg h-10 rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] animate-pulse" />
                 </div>
               </div>
             ))}
           </div>
         </div>
-        <div className="border-t border-white/10 p-4">
+        <div className="border-t border-[var(--border)] p-4">
           <div className="flex items-center gap-2 opacity-70">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm text-white/70">Loading messages…</span>
+            <Spinner className="h-4 w-4" />
+            <span className="text-sm text-[var(--text-secondary)]">Loading messages…</span>
           </div>
         </div>
       </div>
@@ -261,12 +262,12 @@ export default function TextChannel({ channelId }: TextChannelProps) {
         aria-live="polite"
       >
         {isEmpty ? (
-          <div className="text-center text-white/60 mt-10">
-            <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-gradient-to-br from-orange-400/20 to-red-500/20 grid place-items-center border border-white/10">
-              <Hash className="h-7 w-7 text-white/40" />
+          <div className="text-center text-[var(--text-secondary)] mt-10">
+            <div className="mx-auto mb-4 h-16 w-16 rounded-2xl gradient-accent opacity-20 grid place-items-center border border-[var(--border)]">
+              <Hash className="h-7 w-7 text-[var(--text-primary)]" />
             </div>
-            <div className="font-medium mb-1">Be the first to say something</div>
-            <div className="text-sm text-white/40">
+            <div className="font-medium mb-1 text-[var(--text-primary)]">Be the first to say something</div>
+            <div className="text-sm text-[var(--text-tertiary)]">
               Start a conversation in this channel.
             </div>
           </div>
@@ -288,7 +289,7 @@ export default function TextChannel({ channelId }: TextChannelProps) {
                       {/* Avatar (hidden for compact stack when same author) */}
                       <div className="pt-0.5">
                         {showHeader ? (
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-red-500 text-white grid place-items-center text-sm font-medium">
+                          <div className="w-10 h-10 rounded-full gradient-accent text-white grid place-items-center text-sm font-medium">
                             {name[0]?.toUpperCase?.() || "?"}
                           </div>
                         ) : (
@@ -301,17 +302,17 @@ export default function TextChannel({ channelId }: TextChannelProps) {
                         {/* header line like Discord */}
                         {showHeader && (
                           <div className="flex items-baseline gap-2 leading-none">
-                            <span className="font-medium text-white text-[13px]">{name}</span>
-                            <time className="text-[11px] text-white/40 tabular-nums">{when}</time>
+                            <span className="font-medium text-[var(--text-primary)] text-[13px]">{name}</span>
+                            <time className="text-[11px] text-[var(--text-tertiary)] tabular-nums">{when}</time>
                           </div>
                         )}
 
                         {/* text (no bubble) */}
                         <div className={showHeader ? "mt-1" : "mt-0.5"}>
                           {message.is_deleted ? (
-                            <div className="text-white/45 text-sm italic select-none">This message was deleted</div>
+                            <div className="text-[var(--text-tertiary)] text-sm italic select-none">This message was deleted</div>
                           ) : (
-                            <div className="text-[14px] leading-6 text-white/90 whitespace-pre-wrap break-words">
+                            <div className="text-[14px] leading-6 text-[var(--text-primary)] whitespace-pre-wrap break-words">
                               {message.content}
                             </div>
                           )}
@@ -324,12 +325,12 @@ export default function TextChannel({ channelId }: TextChannelProps) {
                               <button
                                 key={emoji}
                                 onClick={() => toggleReact(message.id, emoji, false)}
-                                className="shrink-0 inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 px-2 py-[3px] text-xs"
+                                className="shrink-0 inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-hover)] px-2 py-[3px] text-xs"
                                 title={`${emoji} ${count}`}
                                 aria-label={`${emoji} ${count}`}
                               >
                                 <span>{emoji}</span>
-                                <span className="text-white/60">{count}</span>
+                                <span className="text-[var(--text-secondary)]">{count}</span>
                               </button>
                             ))}
 
@@ -340,7 +341,7 @@ export default function TextChannel({ channelId }: TextChannelProps) {
                                   e.stopPropagation();
                                   setOpenReactionFor(isTrayOpen ? null : message.id);
                                 }}
-                                className="opacity-0 group-hover/message:opacity-100 transition-opacity shrink-0 inline-flex items-center gap-1 rounded-md border border-white/10 bg-[#10131a]/90 px-2 py-[3px] text-[11px] text-white/70 hover:text-white hover:border-white/20"
+                                className="opacity-0 group-hover/message:opacity-100 transition-opacity shrink-0 inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-surface)]/90 px-2 py-[3px] text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)]"
                                 aria-label="Add reaction"
                               >
                                 +
@@ -374,7 +375,7 @@ export default function TextChannel({ channelId }: TextChannelProps) {
 
         {/* Typing indicator */}
         {typingUsers.length > 0 && (
-          <div className="mt-3 ml-11 text-xs text-white/70 flex items-center gap-2">
+          <div className="mt-3 ml-11 text-xs text-[var(--text-secondary)] flex items-center gap-2">
             <TypingDots />
             {typingUsers.length === 1
               ? `${typingUsers[0].user_id} is typing…`
@@ -390,7 +391,7 @@ export default function TextChannel({ channelId }: TextChannelProps) {
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2">
           <button
             onClick={scrollToEnd}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#10131a]/90 backdrop-blur px-3 py-1.5 text-xs text-white/80 hover:text-white hover:border-white/20 shadow-lg"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-surface)]/90 backdrop-blur px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] shadow-lg"
           >
             <ChevronDown className="h-4 w-4" />
             New messages
@@ -399,11 +400,11 @@ export default function TextChannel({ channelId }: TextChannelProps) {
       )}
 
       {/* Composer */}
-      <div className="border-t border-white/10 p-3 sm:p-4 bg-[#0D0F14]/80 backdrop-blur">
-        <div className="rounded-xl border border-white/10 bg-white/[0.04] focus-within:border-white/20 transition-colors">
+      <div className="border-t border-[var(--border)] p-3 sm:p-4 bg-[var(--bg-surface)]/80 backdrop-blur">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-muted)] focus-within:border-[var(--border-hover)] transition-colors">
           <div className="flex items-end">
             <button
-              className="p-3 sm:p-3.5 text-white/70 hover:text-white"
+              className="p-3 sm:p-3.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               aria-label="Attach file"
               title="Attach file"
               type="button"
@@ -420,11 +421,11 @@ export default function TextChannel({ channelId }: TextChannelProps) {
               rows={1}
               placeholder="Message the channel…"
               aria-label="Message input"
-              className="flex-1 resize-none bg-transparent outline-none placeholder:text-white/40 text-white text-sm p-3 sm:p-3.5 leading-5 max-h-40"
+              className="flex-1 resize-none bg-transparent outline-none placeholder:text-[var(--text-tertiary)] text-[var(--text-primary)] text-sm p-3 sm:p-3.5 leading-5 max-h-40"
             />
 
             <button
-              className="p-3 sm:p-3.5 text-white/70 hover:text-white"
+              className="p-3 sm:p-3.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               aria-label="Add emoji"
               title="Add emoji"
               type="button"
@@ -438,8 +439,8 @@ export default function TextChannel({ channelId }: TextChannelProps) {
               className={cx(
                 "m-2 mr-2 sm:mr-2 rounded-lg px-3 py-2 inline-flex items-center gap-2 text-sm font-medium transition-opacity",
                 draft.trim()
-                  ? "bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] text-white hover:opacity-90"
-                  : "bg-white/10 text-white/60 cursor-not-allowed"
+                  ? "gradient-accent text-white hover:opacity-90"
+                  : "bg-[var(--bg-muted)] text-[var(--text-tertiary)] cursor-not-allowed"
               )}
               aria-label="Send message"
             >
@@ -448,9 +449,9 @@ export default function TextChannel({ channelId }: TextChannelProps) {
             </button>
           </div>
         </div>
-        <div className="mt-1.5 pl-12 text-[11px] text-white/40">
-          Press <kbd className="px-1.5 py-0.5 rounded border border-white/20 text-white/70">Enter</kbd> to send •{" "}
-          <kbd className="px-1.5 py-0.5 rounded border border-white/20 text-white/70">Shift</kbd>+<kbd className="px-1.5 py-0.5 rounded border border-white/20 text-white/70">Enter</kbd> for a new line
+        <div className="mt-1.5 pl-12 text-[11px] text-[var(--text-tertiary)]">
+          Press <kbd className="px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--text-secondary)]">Enter</kbd> to send •{" "}
+          <kbd className="px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--text-secondary)]">Shift</kbd>+<kbd className="px-1.5 py-0.5 rounded border border-[var(--border)] text-[var(--text-secondary)]">Enter</kbd> for a new line
         </div>
       </div>
     </div>

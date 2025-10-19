@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, Settings, Volume2, VolumeX, TestTube, Mic, MicOff } from 'lucide-react';
 import { useMediaStreams } from '../../hooks/useMediaStreams';
 import { useWebRTCMedia } from '../../hooks/useWebRTCMedia';
-import { useToast } from '../ui/Toaster';
+import { toast } from '../ui/sonner';
 import type { MediaControlsConfig, TauriAudioDevice } from '../../types/media';
 
 interface MediaControlsProps {
@@ -30,7 +30,6 @@ export default function MediaControls({
   const [isConnecting, setIsConnecting] = useState(false);
   const [testingDevice, setTestingDevice] = useState<string | null>(null);
   
-  const toast = useToast();
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   
   // Media hooks - audio only
@@ -90,13 +89,17 @@ export default function MediaControls({
     setTestingDevice(deviceId);
     try {
       const success = await testAudioDevice(deviceId);
-      toast(success ? 'Device test successful' : 'Device test failed', success ? 'success' : 'error');
+      if (success) {
+        toast.success('Device test successful');
+      } else {
+        toast.error('Device test failed');
+      }
     } catch (error) {
-      toast('Device test failed', 'error');
+      toast.error('Device test failed');
     } finally {
       setTestingDevice(null);
     }
-  }, [testAudioDevice, toast]);
+  }, [testAudioDevice]);
   
   // Handle audio toggle
   const handleAudioToggle = useCallback(async () => {
@@ -120,7 +123,7 @@ export default function MediaControls({
       }
     } catch (error) {
       console.error('Audio toggle failed:', error);
-      toast(`Audio ${mediaState.audio.enabled ? 'stop' : 'start'} failed`, 'error');
+      toast.error(`Audio ${mediaState.audio.enabled ? 'stop' : 'start'} failed`);
     } finally {
       setIsConnecting(false);
     }
@@ -155,10 +158,10 @@ export default function MediaControls({
       }
       
       setShowDeviceSelector(false);
-      toast('Microphone changed', 'success');
+      toast.success('Microphone changed');
     } catch (error) {
       console.error('Device change failed:', error);
-      toast('Failed to change microphone', 'error');
+      toast.error('Failed to change microphone');
     }
   }, [hasLocalAudio, mediaSession, changeDevice, startAudio, removeLocalTrack, addLocalTrack, toast]);
 
@@ -179,7 +182,7 @@ export default function MediaControls({
     try {
       const newSettings = { ...audioSettings, voice_activation_threshold: threshold };
       await saveAudioSettings(newSettings);
-      toast(`Voice threshold: ${Math.round(threshold * 100)}%`, 'info');
+      toast.info(`Voice threshold: ${Math.round(threshold * 100)}%`);
     } catch (error) {
       console.error('Failed to change threshold:', error);
     }

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, ReactNode } from 'react';
 import { useWindowState } from '../../hooks/useWindowState';
-import { useToast } from '../ui/Toaster';
+import { toast } from '../ui/sonner';
 import type { WindowState, Tab, TabContentType } from '../../types/windows';
 
 interface WindowStateContextType {
@@ -21,6 +21,7 @@ interface WindowStateContextType {
   createProcessTab: (processId: string, gridId: string, processName: string, windowId?: string) => Promise<Tab>;
   createDirectMessageTab: (conversationId: string, userName: string, windowId?: string) => Promise<Tab>;
   createGridDashboardTab: (gridId: string, gridName: string, windowId?: string) => Promise<Tab>;
+  createNetworkDashboardTab: (windowId?: string) => Promise<Tab>;
   
   // Tab management
   activateTab: (windowId: string, tabId: string) => Promise<void>;
@@ -46,7 +47,6 @@ interface WindowStateProviderProps {
 
 export function WindowStateProvider({ children }: WindowStateProviderProps) {
   const windowState = useWindowState();
-  const addToast = useToast();
 
   // Initialize on mount
   useEffect(() => {
@@ -58,136 +58,125 @@ export function WindowStateProvider({ children }: WindowStateProviderProps) {
   // Show error toasts
   useEffect(() => {
     if (windowState.error) {
-      addToast(windowState.error, 'error');
+      toast.error(windowState.error);
     }
-  }, [windowState.error, addToast]);
+  }, [windowState.error]);
 
-  // Enhanced tab creation functions with error handling and toasts
+  // Enhanced tab creation functions with error handling (only show errors)
   const createTerminalTabWithToast = async (
-    sessionId: string, 
-    gridId?: string, 
-    title?: string, 
+    sessionId: string,
+    gridId?: string,
+    title?: string,
     windowId?: string
   ): Promise<Tab> => {
     try {
-      const tab = await windowState.createTerminalTab(sessionId, gridId, title, windowId);
-      addToast(`Terminal tab "${tab.title}" created`, 'success');
-      return tab;
+      return await windowState.createTerminalTab(sessionId, gridId, title, windowId);
     } catch (error) {
-      addToast(`Failed to create terminal tab: ${error}`, 'error');
+      toast.error(`Failed to create terminal tab: ${error}`);
       throw error;
     }
   };
 
   const createTextChannelTabWithToast = async (
-    channelId: string, 
-    gridId: string, 
-    channelName: string, 
+    channelId: string,
+    gridId: string,
+    channelName: string,
     windowId?: string
   ): Promise<Tab> => {
     try {
-      const tab = await windowState.createTextChannelTab(channelId, gridId, channelName, windowId);
-      addToast(`Channel tab "#${channelName}" opened`, 'success');
-      return tab;
+      return await windowState.createTextChannelTab(channelId, gridId, channelName, windowId);
     } catch (error) {
-      addToast(`Failed to open channel: ${error}`, 'error');
+      toast.error(`Failed to open channel: ${error}`);
       throw error;
     }
   };
 
   const createProcessTabWithToast = async (
-    processId: string, 
-    gridId: string, 
-    processName: string, 
+    processId: string,
+    gridId: string,
+    processName: string,
     windowId?: string
   ): Promise<Tab> => {
     try {
-      const tab = await windowState.createProcessTab(processId, gridId, processName, windowId);
-      addToast(`Process "${processName}" opened`, 'success');
-      return tab;
+      return await windowState.createProcessTab(processId, gridId, processName, windowId);
     } catch (error) {
-      addToast(`Failed to open process: ${error}`, 'error');
+      toast.error(`Failed to open process: ${error}`);
       throw error;
     }
   };
 
   const createDirectMessageTabWithToast = async (
-    conversationId: string, 
-    userName: string, 
+    conversationId: string,
+    userName: string,
     windowId?: string
   ): Promise<Tab> => {
     try {
-      const tab = await windowState.createDirectMessageTab(conversationId, userName, windowId);
-      addToast(`DM with ${userName} opened`, 'success');
-      return tab;
+      return await windowState.createDirectMessageTab(conversationId, userName, windowId);
     } catch (error) {
-      addToast(`Failed to open DM: ${error}`, 'error');
+      toast.error(`Failed to open DM: ${error}`);
       throw error;
     }
   };
 
   const createGridDashboardTabWithToast = async (
-    gridId: string, 
-    gridName: string, 
+    gridId: string,
+    gridName: string,
     windowId?: string
   ): Promise<Tab> => {
     try {
-      const tab = await windowState.createGridDashboardTab(gridId, gridName, windowId);
-      addToast(`${gridName} dashboard opened`, 'success');
-      return tab;
+      return await windowState.createGridDashboardTab(gridId, gridName, windowId);
     } catch (error) {
-      addToast(`Failed to open dashboard: ${error}`, 'error');
+      toast.error(`Failed to open dashboard: ${error}`);
       throw error;
     }
   };
 
-  // Enhanced tab operations with toasts
+  const createNetworkDashboardTabWithToast = async (
+    windowId?: string
+  ): Promise<Tab> => {
+    try {
+      return await windowState.createNetworkDashboardTab(windowId);
+    } catch (error) {
+      toast.error(`Failed to open network dashboard: ${error}`);
+      throw error;
+    }
+  };
+
+  // Enhanced tab operations (only show errors)
   const activateTabWithToast = async (windowId: string, tabId: string): Promise<void> => {
     try {
       await windowState.activateTab(windowId, tabId);
     } catch (error) {
-      addToast(`Failed to activate tab: ${error}`, 'error');
+      toast.error(`Failed to activate tab: ${error}`);
       throw error;
     }
   };
 
   const closeTabWithToast = async (windowId: string, tabId: string): Promise<void> => {
     try {
-      const window = windowState.getWindow(windowId);
-      const tab = window?.tabs.find(t => t.id === tabId);
       await windowState.closeTab(windowId, tabId);
-      if (tab) {
-        addToast(`Tab "${tab.title}" closed`, 'info');
-      }
     } catch (error) {
-      addToast(`Failed to close tab: ${error}`, 'error');
+      toast.error(`Failed to close tab: ${error}`);
       throw error;
     }
   };
 
   const detachTabWithToast = async (
-    tabId: string, 
-    sourceWindowId: string, 
+    tabId: string,
+    sourceWindowId: string,
     position?: { x: number; y: number }
   ): Promise<void> => {
     try {
-      const sourceWindow = windowState.getWindow(sourceWindowId);
-      const tab = sourceWindow?.tabs.find(t => t.id === tabId);
-      
       const request = {
         tab_id: tabId,
         source_window_id: sourceWindowId,
         position,
         size: { width: 1200, height: 800 },
       };
-      
+
       await windowState.detachTab(request);
-      
-      if (tab) {
-        addToast(`Tab "${tab.title}" detached to new window`, 'success');
-      }
     } catch (error) {
-      addToast(`Failed to detach tab: ${error}`, 'error');
+      toast.error(`Failed to detach tab: ${error}`);
       throw error;
     }
   };
@@ -210,6 +199,7 @@ export function WindowStateProvider({ children }: WindowStateProviderProps) {
     createProcessTab: createProcessTabWithToast,
     createDirectMessageTab: createDirectMessageTabWithToast,
     createGridDashboardTab: createGridDashboardTabWithToast,
+    createNetworkDashboardTab: createNetworkDashboardTabWithToast,
     
     // Tab management with toasts
     activateTab: activateTabWithToast,

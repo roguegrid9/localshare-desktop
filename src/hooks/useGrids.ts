@@ -25,11 +25,10 @@ function gridToSummary(grid: Grid): GridSummary {
   return {
     id: grid.id,
     name: grid.name,
-    icon: grid.name[0], // First letter as icon fallback
     status: "online", // TODO: Determine actual status based on member activity
     memberCount: grid.member_count,
     unread: 0, // TODO: Implement unread counts
-    metadata: { 
+    metadata: {
       grid_type: grid.grid_type || grid.metadata?.grid_type // Handle both locations
     }
   };
@@ -55,11 +54,11 @@ export function useGrids() {
   // Load grids from backend
   const loadGrids = useCallback(async () => {
     try {
-      console.log("Loading grids...");
+      // console.log("Loading grids...");
       setError(null);
       
       const rawResponse = await invoke("get_my_grids");
-      console.log("Raw grids response:", rawResponse);
+      // console.log("Raw grids response:", rawResponse);
       
       // Handle different response formats
       let gridsArray: Grid[] = [];
@@ -69,17 +68,17 @@ export function useGrids() {
         const typedResponse = rawResponse as { grids: Grid[] };
         gridsArray = typedResponse.grids || [];
       } else {
-        console.warn("Unexpected grids response format:", rawResponse);
+        // console.warn("Unexpected grids response format:", rawResponse);
         gridsArray = [];
       }
       
       // Convert to GridSummary format
       const gridSummaries = gridsArray.map(gridToSummary);
-      console.log("Converted grid summaries:", gridSummaries);
+      // console.log("Converted grid summaries:", gridSummaries);
       
       setAllGrids(gridSummaries);
     } catch (error) {
-      console.error("Failed to load grids:", error);
+      // console.error("Failed to load grids:", error);
       setError(error as string);
       setAllGrids([]);
     }
@@ -94,12 +93,12 @@ export function useGrids() {
     });
     
     if (existingPersonalGrid) {
-      console.log("Found existing personal grid:", existingPersonalGrid);
+      // console.log("Found existing personal grid:", existingPersonalGrid);
       return existingPersonalGrid;
     }
 
     try {
-      console.log("Creating personal messages grid...");
+      // console.log("Creating personal messages grid...");
       
       const request = {
         name: "Personal Messages",
@@ -110,7 +109,7 @@ export function useGrids() {
       };
 
       const response = await invoke("create_grid", { request });
-      console.log("Personal messages grid created:", response);
+      // console.log("Personal messages grid created:", response);
       
       // Refresh grids to include the new personal grid
       await loadGrids();
@@ -125,7 +124,7 @@ export function useGrids() {
       return createdGrid;
       
     } catch (error) {
-      console.error("Failed to create personal messages grid:", error);
+      // console.error("Failed to create personal messages grid:", error);
       throw error;
     }
   }, [allGrids, loadGrids]);
@@ -139,7 +138,7 @@ export function useGrids() {
         throw new Error("Could not create personal messages grid");
       }
 
-      console.log("Creating conversation with:", targetUserId);
+      // console.log("Creating conversation with:", targetUserId);
       
       // Create a private channel for the conversation
       const channelRequest = {
@@ -157,11 +156,11 @@ export function useGrids() {
       // Use the passed createTextChannel function
       const channel = await createTextChannelFn(personalGrid.id, channelRequest);
       
-      console.log("Conversation channel created:", channel);
+      // console.log("Conversation channel created:", channel);
       return channel.id;
       
     } catch (error) {
-      console.error("Failed to create conversation:", error);
+      // console.error("Failed to create conversation:", error);
       throw error;
     }
   }, [ensurePersonalMessagesGrid]);
@@ -188,32 +187,41 @@ export function useGrids() {
       try {
         // Listen for grid creation/join events
         const unsubGridCreated = await listen('grid_created', (event: any) => {
-          console.log("Grid created event:", event);
+          // console.log("Grid created event:", event);
           refreshGrids();
         });
 
         const unsubGridJoined = await listen('grid_joined', (event: any) => {
-          console.log("Grid joined event:", event);
+          // console.log("Grid joined event:", event);
           refreshGrids();
         });
 
         const unsubGridLeft = await listen('grid_left', (event: any) => {
-          console.log("Grid left event:", event);
+          // console.log("Grid left event:", event);
           refreshGrids();
         });
 
         // Listen for member status changes to update online status
+        let memberStatusChangeCount = 0;
+        let memberStatusTimeout: NodeJS.Timeout | null = null;
+
         const unsubMemberStatusChanged = await listen('member_status_changed', (event: any) => {
           const { grid_id, user_id, is_online } = event.payload;
 
-          setAllGrids(prev => prev.map(grid => {
-            if (grid.id === grid_id) {
-              // Update status based on any online members
-              // For now, just refresh the whole list
+          // Throttle grid refreshes - batch member status changes
+          memberStatusChangeCount++;
+
+          if (memberStatusTimeout) {
+            clearTimeout(memberStatusTimeout);
+          }
+
+          memberStatusTimeout = setTimeout(() => {
+            if (memberStatusChangeCount > 0) {
               refreshGrids();
+              memberStatusChangeCount = 0;
             }
-            return grid;
-          }));
+            memberStatusTimeout = null;
+          }, 2000); // Refresh at most every 2 seconds
         });
 
         return () => {
@@ -223,14 +231,14 @@ export function useGrids() {
           unsubMemberStatusChanged();
         };
       } catch (error) {
-        console.warn("Failed to setup grid listeners:", error);
+        // console.warn("Failed to setup grid listeners:", error);
         return () => {};
       }
     };
 
     // Listen for grid-updated DOM event (from GridManagement)
     const handleGridUpdated = () => {
-      console.log("Grid updated event received, refreshing grids...");
+      // console.log("Grid updated event received, refreshing grids...");
       refreshGrids();
     };
     window.addEventListener('grid-updated', handleGridUpdated);

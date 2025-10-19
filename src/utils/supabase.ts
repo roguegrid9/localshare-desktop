@@ -16,9 +16,7 @@ try {
       flowType: 'pkce'
     }
   });
-  console.log('Supabase client initialized successfully');
 } catch (error) {
-  console.error('Failed to initialize Supabase client:', error);
   // Create a minimal fallback client
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {

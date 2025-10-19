@@ -4,6 +4,7 @@ import { TabContainer } from './TabContainer';
 import EmptyState from '../EmptyState';
 import { Home } from 'lucide-react';
 import type { TabContentType } from '../../types/windows';
+import { Spinner } from '../ui/spinner';
 
 interface WindowContainerProps {
   selectedGridId?: string;
@@ -30,7 +31,6 @@ export function WindowContainer({
     getMainWindow,
     createTabFromSelection,
     createWelcomeTab,
-    createTerminalTab,
     refreshWindows,
   } = useWindowState();
 
@@ -47,24 +47,15 @@ export function WindowContainer({
     return getMainWindow();
   }, [getMainWindow]);
 
-  // Create welcome tab only on first load
+  // Create welcome tab on first load
   useEffect(() => {
     if (isInitialized && mainWindow && mainWindow.tabs.length === 0 && !hasCreatedInitialTab) {
-      console.log('Creating initial welcome tab for main window:', mainWindowId);
-      
       createWelcomeTab(mainWindowId).then(() => {
-        console.log('Welcome tab created successfully');
         setHasCreatedInitialTab(true);
         setTimeout(() => refreshWindows(), 500);
-      }).catch(error => {
-        console.error('Failed to create welcome tab:', error);
-        createTerminalTab("welcome-terminal", "default-grid", "Terminal", mainWindowId).then(() => {
-          setHasCreatedInitialTab(true);
-          setTimeout(() => refreshWindows(), 500);
-        }).catch(console.error);
-      });
+      }).catch(console.error);
     }
-  }, [isInitialized, mainWindow?.tabs.length, mainWindowId, createWelcomeTab, createTerminalTab, refreshWindows, hasCreatedInitialTab]);
+  }, [isInitialized, mainWindow?.tabs.length, mainWindowId, createWelcomeTab, refreshWindows, hasCreatedInitialTab]);
 
   // Check if a tab already exists for the current selection
   const existingTab = useMemo(() => {
@@ -104,14 +95,14 @@ export function WindowContainer({
     // CRITICAL FIX: Only create tabs when we have SPECIFIC content selected, not just a grid
     const hasSpecificContent = selectedChannelId || selectedProcessId;
     if (!hasSpecificContent) {
-      console.log('Grid selected but no specific content - NOT creating auto tab');
+      // console.log('Grid selected but no specific content - NOT creating auto tab');
       prevSelection.current = currentSelection;
       return;
     }
 
     if (existingTab) return;
 
-    console.log('Creating new tab for selection change:', currentSelection);
+    // console.log('Creating new tab for selection change:', currentSelection);
     prevSelection.current = currentSelection;
 
     createTabFromSelection(selectedChannelId, selectedProcessId, undefined, selectedGridId, false, grids)
@@ -125,8 +116,8 @@ export function WindowContainer({
     return (
       <div className="flex-1 flex items-center justify-center w-full h-full">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white/60 mx-auto mb-4"></div>
-          <p className="text-white/60">Initializing window system...</p>
+          <Spinner className="h-8 w-8 mx-auto mb-4" />
+          <p className="text-text-secondary">Initializing window system...</p>
         </div>
       </div>
     );
@@ -141,7 +132,7 @@ export function WindowContainer({
             <p className="text-red-300 text-sm mb-4">{error}</p>
             <button
               onClick={initialize}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200"
             >
               Retry
             </button>

@@ -45,6 +45,10 @@ pub enum TabContentType {
         grid_id: String,
         grid_name: String,
     },
+    /// Network/relay dashboard
+    NetworkDashboard,
+    /// Subscription management page
+    Subscription,
     /// Welcome/empty state
     Welcome,
 }
@@ -103,8 +107,6 @@ pub enum WindowType {
     Main,
     /// A detached window containing specific content
     Detached,
-    /// A popup window for specific actions
-    Popup,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,17 +181,10 @@ pub struct WindowStateChangeEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum WindowEventType {
-    WindowCreated,
-    WindowClosed,
     TabCreated,
     TabClosed,
-    TabMoved,
     TabActivated,
-    TabDetached,
-    TabReattached,
-    WindowFocused,
-    WindowResized,
-    WindowMoved,
+    WindowStateChanged,
 }
 
 /// Configuration for creating a new window
@@ -210,7 +205,7 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            title: "RogueGrid9".to_string(),
+            title: "LocalShare".to_string(),
             width: 1200,
             height: 800,
             min_width: Some(800),
@@ -246,6 +241,8 @@ impl Tab {
             TabContentType::Process { process_name, .. } => (process_name.clone(), Some("cog".to_string())),
             TabContentType::DirectMessage { user_name, .. } => (user_name.clone(), Some("user".to_string())),
             TabContentType::GridDashboard { grid_name, .. } => (format!("{} Dashboard", grid_name), Some("grid".to_string())),
+            TabContentType::NetworkDashboard => ("Network Dashboard".to_string(), Some("network".to_string())),
+            TabContentType::Subscription => ("Subscription".to_string(), Some("sparkles".to_string())),
             TabContentType::Welcome => ("Welcome".to_string(), Some("home".to_string())),
         };
 
@@ -290,7 +287,7 @@ impl WindowState {
         Self {
             id,
             label: "main".to_string(),
-            title: "RogueGrid9".to_string(),
+            title: "LocalShare".to_string(),
             tabs: vec![],
             active_tab_id: None,
             window_type: WindowType::Main,

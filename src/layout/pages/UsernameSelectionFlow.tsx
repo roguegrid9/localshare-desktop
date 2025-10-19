@@ -1,6 +1,15 @@
 import { useState, useCallback } from 'react';
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useTauriCommands } from '../../hooks/useTauriCommands';
 import UsernamePicker from './UsernamePicker';
+import { Spinner } from '../../components/ui/spinner';
 
 interface UserState {
   is_authenticated: boolean;
@@ -19,6 +28,51 @@ interface UsernameSelectionFlowProps {
   onComplete: (updatedUserState: UserState) => void;
   onSkip?: () => void; // Optional skip for guest accounts
 }
+
+const layout = {
+  root:
+    "relative min-h-screen bg-bg-primary text-text-primary flex items-center justify-center overflow-hidden px-6 py-12",
+  backdrop: "absolute inset-0 pointer-events-none",
+  orbPrimary:
+    "absolute -top-40 -left-24 h-[32rem] w-[32rem] rounded-full opacity-35 blur-3xl",
+  orbSecondary:
+    "absolute -bottom-56 right-[-14rem] h-[32rem] w-[32rem] rounded-full opacity-35 blur-[140px]",
+  gradient:
+    "absolute inset-0 bg-[linear-gradient(135deg,rgba(10,11,20,0.9)_0%,rgba(7,8,14,0.96)_50%,rgba(5,5,7,0.98)_100%)]",
+  card:
+    "relative z-10 glass-panel border-border/70 shadow-glow w-full max-w-xl rounded-[28px] overflow-hidden",
+  badge:
+    "inline-flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-text-secondary",
+  avatar:
+    "w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-gradient-start to-accent-gradient-end text-white text-lg font-heading grid place-items-center shadow-glow border border-border/70",
+  infoCard:
+    "flex items-center gap-3 rounded-2xl border border-border/70 bg-bg-muted px-4 py-3",
+  statusChip:
+    "inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs tracking-[0.28em]",
+  errorBanner:
+    "rounded-xl border border-error/40 bg-error/10 px-4 py-3 text-sm text-error",
+};
+
+const Backdrop = () => (
+  <div className={layout.backdrop} aria-hidden>
+    <div
+      className={layout.orbPrimary}
+      style={{
+        background:
+          "radial-gradient(circle at 25% 25%, rgba(58,175,255,0.45), transparent 70%)",
+      }}
+    />
+    <div
+      className={layout.orbSecondary}
+      style={{
+        background:
+          "radial-gradient(circle at 75% 75%, rgba(123,92,255,0.45), transparent 75%)",
+      }}
+    />
+    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(90,184,255,0.18),transparent_55%)] opacity-80" />
+    <div className={layout.gradient} />
+  </div>
+);
 
 export default function UsernameSelectionFlow({
   userState,
@@ -66,106 +120,98 @@ export default function UsernameSelectionFlow({
   const canSkip = userState.account_type !== 'authenticated'; // Only allow skipping for non-authenticated users
 
   return (
-    <div className="min-h-screen bg-[#0a0b14] flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Choose Your Username
-          </h1>
-          <p className="text-gray-400">
-            {userState.account_type === 'authenticated' 
-              ? "Set a username to make it easier for others to find you in grids"
-              : "Optionally set a username to personalize your experience"
-            }
-          </p>
-        </div>
+    <div className={layout.root}>
+      <Backdrop />
 
-        {/* Username Selection */}
-        <div className="bg-[#111319] rounded-2xl border border-white/10 p-6">
-          <div className="space-y-6">
-            {/* User Info */}
-            <div className="flex items-center space-x-3 p-3 bg-[#1a1d29] rounded-xl">
-              <div className="w-10 h-10 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] rounded-full flex items-center justify-center text-white font-semibold">
-                {userState.display_name?.[0]?.toUpperCase() || '?'}
-              </div>
-              <div>
-                <div className="text-white font-medium">
-                  {userState.display_name || 'Unknown User'}
-                </div>
-                <div className="text-xs text-gray-400 capitalize">
-                  {userState.account_type} Account
-                </div>
-              </div>
+      <Card className={layout.card}>
+        <CardHeader className="space-y-3 text-center">
+          <CardTitle className="text-2xl">Choose your username</CardTitle>
+          <CardDescription className="text-sm text-text-secondary">
+            {userState.account_type === "authenticated"
+              ? "Claim your handle so teammates can find you across grids."
+              : "Set an optional handle to personalize your LocalShare presence."}
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          <div className={layout.infoCard}>
+            <div className={layout.avatar}>
+              {userState.display_name?.[0]?.toUpperCase() || "?"}
             </div>
+            <div>
+              <p className="font-heading text-sm text-text-primary">
+                {userState.display_name || "Unknown user"}
+              </p>
+              <p className="text-xs text-text-secondary capitalize">
+                {userState.account_type} account
+              </p>
+            </div>
+          </div>
 
-            {/* Username Input */}
-            <UsernamePicker
-              onUsernameSelected={setSelectedUsername}
-              disabled={isUpdating}
-              required={userState.account_type === 'authenticated'}
-              placeholder="Enter your username"
-            />
+          {error && <div className={layout.errorBanner}>{error}</div>}
 
-            {/* Error Display */}
-            {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm">
-                {error}
-              </div>
+          <UsernamePicker
+            onUsernameSelected={setSelectedUsername}
+            disabled={isUpdating}
+            required={userState.account_type === "authenticated"}
+            placeholder="Enter your username"
+          />
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {canSkip && (
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={isUpdating}
+                onClick={handleSkip}
+              >
+                Skip for now
+              </Button>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              {canSkip && (
-                <button
-                  onClick={handleSkip}
-                  disabled={isUpdating}
-                  className="flex-1 px-4 py-3 bg-[#1a1d29] hover:bg-[#1f2336] text-gray-300 rounded-xl disabled:opacity-50 transition-colors"
-                >
-                  Skip for Now
-                </button>
+            <Button
+              type="button"
+              variant="gradient"
+              className={canSkip ? "flex-1" : "w-full"}
+              disabled={isUpdating || !selectedUsername}
+              onClick={handleSaveUsername}
+            >
+              {isUpdating ? (
+                <span className="inline-flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  Setting username…
+                </span>
+              ) : (
+                "Continue"
               )}
-              
-              <button
-                onClick={handleSaveUsername}
-                disabled={isUpdating || !selectedUsername}
-                className={`${canSkip ? 'flex-1' : 'w-full'} px-4 py-3 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] text-white rounded-xl disabled:opacity-50 transition-all`}
-              >
-                {isUpdating ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    <span>Setting Username...</span>
-                  </div>
-                ) : (
-                  'Continue'
-                )}
-              </button>
-            </div>
-
-            {/* Help Text */}
-            <div className="text-xs text-gray-500 text-center">
-              {userState.account_type === 'authenticated' 
-                ? "You can change your username later in settings"
-                : "You can set or change your username anytime in settings"
-              }
-            </div>
+            </Button>
           </div>
-        </div>
 
-        {/* Connection Status */}
-        <div className="text-center">
-          <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs ${
-            userState.connection_status === 'connected' 
-              ? 'bg-green-500/20 text-green-400' 
-              : 'bg-yellow-500/20 text-yellow-400'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${
-              userState.connection_status === 'connected' 
-                ? 'bg-green-400' 
-                : 'bg-yellow-400'
-            }`}></div>
-            <span className="capitalize">{userState.connection_status}</span>
-          </div>
+          <p className="text-xs text-text-tertiary text-center">
+            {userState.account_type === "authenticated"
+              ? "You can update this anytime from settings."
+              : "You can set or edit your username later from settings."}
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="relative z-10 mt-6 text-center">
+        <div
+          className={`${layout.statusChip} ${
+            userState.connection_status === "connected"
+              ? "border-success/50 text-success"
+              : "border-warning/50 text-warning"
+          }`}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              userState.connection_status === "connected"
+                ? "bg-success"
+                : "bg-warning"
+            }`}
+          />
+          <span className="capitalize">{userState.connection_status}</span>
         </div>
       </div>
     </div>

@@ -125,6 +125,20 @@ pub async fn get_frp_status(
     }
 }
 
+/// Get relay subscription status
+#[tauri::command]
+pub async fn get_relay_subscription(
+    api_client: State<'_, CoordinatorClient>,
+    token: String,
+) -> Result<RelaySubscription, String> {
+    let response = api_client
+        .get_relay_credentials(&token)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(response.subscription)
+}
+
 /// Create a new public tunnel
 #[tauri::command]
 pub async fn create_tunnel_command(

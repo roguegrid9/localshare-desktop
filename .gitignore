@@ -28,3 +28,6 @@ src-tauri/target/
 .env
 .env.local
 .env.production
+
+*storybook.log
+storybook-static

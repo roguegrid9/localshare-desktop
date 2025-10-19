@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Check, X, Loader2, AlertCircle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useTauriCommands } from '../../hooks/useTauriCommands';
 
 interface UsernamePickerProps {
@@ -8,9 +11,9 @@ interface UsernamePickerProps {
   placeholder?: string;
 }
 
-export default function UsernamePicker({ 
-  onUsernameSelected, 
-  disabled = false, 
+export default function UsernamePicker({
+  onUsernameSelected,
+  disabled = false,
   required = false,
   placeholder = "Choose a username (optional)"
 }: UsernamePickerProps) {
@@ -84,26 +87,26 @@ export default function UsernamePicker({
   }, []);
 
   const getStatusColor = () => {
-    if (isChecking) return 'text-gray-400';
-    if (error && error.includes('Could not verify')) return 'text-yellow-400'; // Warning for server timeout
+    if (isChecking) return 'text-text-secondary';
+    if (error && error.includes('Could not verify')) return 'text-warning';
     if (error) return 'text-red-400';
-    if (isAvailable === true) return 'text-green-400';
+    if (isAvailable === true) return 'text-green-500';
     if (isAvailable === false) return 'text-red-400';
-    return 'text-gray-400';
+    return 'text-text-tertiary';
   };
 
   const getStatusIcon = () => {
-    if (isChecking) return '...';
-    if (error && error.includes('Could not verify')) return '!'; // Warning for server timeout
-    if (error) return '✗';
-    if (isAvailable === true) return '✓';
-    if (isAvailable === false) return '✗';
-    return '';
+    if (isChecking) return <Loader2 className="h-4 w-4 animate-spin" />;
+    if (error && error.includes('Could not verify')) return <AlertCircle className="h-4 w-4" />;
+    if (error) return <X className="h-4 w-4" />;
+    if (isAvailable === true) return <Check className="h-4 w-4" />;
+    if (isAvailable === false) return <X className="h-4 w-4" />;
+    return null;
   };
 
   const getHelperText = () => {
     if (isChecking) return 'Checking availability...';
-    if (error && error.includes('Could not verify')) return error; // Server check failed but allowed
+    if (error && error.includes('Could not verify')) return error;
     if (error) return error;
     if (isAvailable === true) return 'Username is available!';
     if (isAvailable === false) return 'Username is taken';
@@ -113,32 +116,32 @@ export default function UsernamePicker({
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm font-medium text-gray-300">
+      <Label className="text-text-secondary">
         Username {required && <span className="text-red-400">*</span>}
-      </label>
-      
+      </Label>
+
       <div className="relative">
-        <input
+        <Input
           type="text"
           value={username}
           onChange={handleChange}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full px-3 py-2 bg-[#111319] border border-white/10 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-orange-500/50 pr-8"
+          className="pr-10"
           minLength={3}
           maxLength={30}
         />
-        
+
         {username.length > 0 && (
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-            <span className={getStatusColor()}>{getStatusIcon()}</span>
+          <div className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${getStatusColor()}`}>
+            {getStatusIcon()}
           </div>
         )}
       </div>
-      
-      <div className={`text-xs ${getStatusColor()}`}>
+
+      <p className={`text-xs ${getStatusColor()} flex items-center gap-1.5`}>
         {getHelperText()}
-      </div>
+      </p>
     </div>
   );
 }

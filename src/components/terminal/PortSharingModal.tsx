@@ -1,7 +1,8 @@
 // src/components/terminal/PortSharingModal.tsx
 import { useState } from 'react';
 import { useTauriCommands } from '../../hooks/useTauriCommands';
-import { useToast } from '../ui/Toaster';
+import { toast } from '../ui/sonner';
+import { Spinner } from '../ui/spinner';
 
 interface PortSharingModalProps {
   isOpen: boolean;
@@ -30,19 +31,18 @@ export default function PortSharingModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { createManualPortShare } = useTauriCommands();
-  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!port || isNaN(Number(port))) {
-      toast('Please enter a valid port number', 'error');
+      toast.error('Please enter a valid port number');
       return;
     }
 
     const portNumber = Number(port);
     if (portNumber < 1 || portNumber > 65535) {
-      toast('Port must be between 1 and 65535', 'error');
+      toast.error('Port must be between 1 and 65535');
       return;
     }
 
@@ -56,11 +56,11 @@ export default function PortSharingModal({
         serviceName || `${sessionName || 'Terminal'} - Port ${port}`
       );
       
-      toast(`Port ${port} is now being shared!`, 'success');
+      toast.success(`Port ${port} is now being shared!`);
       handleClose();
     } catch (error) {
       console.error('Failed to share port:', error);
-      toast(`Failed to share port: ${error}`, 'error');
+      toast.error(`Failed to share port: ${error}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -235,7 +235,7 @@ export default function PortSharingModal({
             >
               {isSubmitting ? (
                 <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <Spinner className="h-4 w-4" />
                   <span>Sharing...</span>
                 </div>
               ) : (
