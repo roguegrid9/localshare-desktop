@@ -14,6 +14,7 @@ pub mod discovery;
 pub mod share;
 pub mod updater;
 pub mod relay;
+pub mod process_tunnel;
 
 // Re-export all commands
 pub use auth::*;
@@ -30,3 +31,4 @@ pub use media::*;
 pub use share::*;
 pub use updater::*;
 pub use relay::*;
+pub use process_tunnel::*;

@@ -2523,6 +2523,157 @@ impl CoordinatorClient {
         Ok(availability)
     }
 
+    // ========================================================================
+    // PROCESS-SPECIFIC TUNNEL METHODS
+    // ========================================================================
+
+    /// Create a public tunnel for a specific process
+    pub async fn create_process_tunnel(
+        &self,
+        token: &str,
+        process_id: &str,
+        request: crate::commands::process_tunnel::CreateProcessTunnelRequest,
+    ) -> Result<crate::commands::process_tunnel::ProcessTunnel> {
+        log::info!("Creating process tunnel for process: {}", process_id);
+
+        let response = self.client
+            .post(&format!("{}/api/v1/processes/{}/tunnel", self.base_url, process_id))
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to create process tunnel")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to create process tunnel ({}): {}", status, error_text);
+        }
+
+        let tunnel: crate::commands::process_tunnel::ProcessTunnel = response
+            .json()
+            .await
+            .context("Failed to parse process tunnel response")?;
+
+        log::info!("Successfully created process tunnel: {} -> {}", process_id, tunnel.public_url);
+        Ok(tunnel)
+    }
+
+    /// Get the tunnel for a specific process (returns None if no tunnel exists)
+    pub async fn get_process_tunnel(
+        &self,
+        token: &str,
+        process_id: &str,
+    ) -> Result<Option<crate::commands::process_tunnel::ProcessTunnel>> {
+        log::info!("Getting process tunnel for process: {}", process_id);
+
+        let response = self.client
+            .get(&format!("{}/api/v1/processes/{}/tunnel", self.base_url, process_id))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to get process tunnel")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to get process tunnel ({}): {}", status, error_text);
+        }
+
+        let tunnel: Option<crate::commands::process_tunnel::ProcessTunnel> = response
+            .json()
+            .await
+            .context("Failed to parse process tunnel response")?;
+
+        log::info!("Process tunnel for {}: {:?}", process_id, tunnel.as_ref().map(|t| &t.public_url));
+        Ok(tunnel)
+    }
+
+    /// Update the subdomain of a process tunnel
+    pub async fn update_process_tunnel_subdomain(
+        &self,
+        token: &str,
+        process_id: &str,
+        request: crate::commands::process_tunnel::UpdateProcessTunnelRequest,
+    ) -> Result<()> {
+        log::info!("Updating process tunnel subdomain for process: {}", process_id);
+
+        let response = self.client
+            .patch(&format!("{}/api/v1/processes/{}/tunnel", self.base_url, process_id))
+            .bearer_auth(token)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to update process tunnel subdomain")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to update process tunnel subdomain ({}): {}", status, error_text);
+        }
+
+        log::info!("Successfully updated process tunnel subdomain for: {}", process_id);
+        Ok(())
+    }
+
+    /// Delete the tunnel for a specific process
+    pub async fn delete_process_tunnel(
+        &self,
+        token: &str,
+        process_id: &str,
+    ) -> Result<()> {
+        log::info!("Deleting process tunnel for process: {}", process_id);
+
+        let response = self.client
+            .delete(&format!("{}/api/v1/processes/{}/tunnel", self.base_url, process_id))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to delete process tunnel")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to delete process tunnel ({}): {}", status, error_text);
+        }
+
+        log::info!("Successfully deleted process tunnel for: {}", process_id);
+        Ok(())
+    }
+
+    /// Check if a tunnel subdomain is available
+    pub async fn check_tunnel_subdomain_availability(
+        &self,
+        token: &str,
+        subdomain: &str,
+    ) -> Result<bool> {
+        log::info!("Checking tunnel subdomain availability: {}", subdomain);
+
+        let response = self.client
+            .get(&format!("{}/api/v1/relay/tunnels/check-subdomain/{}", self.base_url, subdomain))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("Failed to check tunnel subdomain availability")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to check subdomain availability ({}): {}", status, error_text);
+        }
+
+        #[derive(serde::Deserialize)]
+        struct AvailabilityResponse {
+            available: bool,
+        }
+
+        let availability_response: AvailabilityResponse = response.json().await
+            .context("Failed to parse subdomain availability response")?;
+
+        log::info!("Subdomain '{}' availability: {}", subdomain, availability_response.available);
+        Ok(availability_response.available)
+    }
+
     /// Report NAT status to the server
     pub async fn report_nat_status(
         &self,

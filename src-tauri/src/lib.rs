@@ -598,6 +598,15 @@ pub fn run() {
             check_subdomain_command,
             detect_nat_type,
 
+            // ============================================================================
+            // PROCESS TUNNEL COMMANDS
+            // ============================================================================
+            create_process_tunnel,
+            get_process_tunnel,
+            update_process_tunnel_subdomain,
+            delete_process_tunnel,
+            check_tunnel_subdomain_availability,
+
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

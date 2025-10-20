@@ -15,13 +15,17 @@ import {
   Share2,
   Info,
   Copy,
-  CheckCircle2
+  CheckCircle2,
+  Globe,
+  Plus,
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import type { ProcessDashboard as ProcessDashboardType } from '../../types/dashboard';
 import type { ProcessAvailability, LocalProcessStatus } from '../../types/process';
+import { ProcessTunnelModal, type ProcessTunnel } from './ProcessTunnelModal';
 
 interface ProcessDashboardProps {
   processId: string;
@@ -752,6 +756,204 @@ function CopyAddressButton({
   );
 }
 
+function PublicTunnelSection({
+  dashboard,
+  processId,
+  gridId,
+  tunnel,
+  sessionToken,
+  onOpenModal,
+  onTunnelChange,
+}: {
+  dashboard: ProcessDashboardType;
+  processId: string;
+  gridId: string;
+  tunnel: ProcessTunnel | null;
+  sessionToken: string;
+  onOpenModal: () => void;
+  onTunnelChange: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const openInBrowser = (url: string) => {
+    // Only works for HTTPS URLs
+    if (url.startsWith('https://')) {
+      window.open(url, '_blank');
+    }
+  };
+
+  return (
+    <Section title={
+      <>
+        <Globe className="w-4 h-4" />
+        Public Tunnel
+      </>
+    }>
+      {tunnel ? (
+        <div className="space-y-4">
+          {/* Tunnel Active */}
+          <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                <Globe className="w-5 h-5 text-green-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-green-300 mb-1">Tunnel Active</h3>
+                <p className="text-sm text-green-200/80">
+                  Your process is publicly accessible via HTTPS tunnel
+                </p>
+              </div>
+              <Badge variant="success" className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                {tunnel.status}
+              </Badge>
+            </div>
+
+            {/* Public URL */}
+            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-green-300/80 mb-1">Public URL</div>
+                  <code className="text-sm text-green-300 font-mono break-all">
+                    {tunnel.public_url}
+                  </code>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button
+                    onClick={() => handleCopyUrl(tunnel.public_url)}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 mr-1" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                  {tunnel.protocol === 'https' && (
+                    <Button
+                      onClick={() => openInBrowser(tunnel.public_url)}
+                      size="sm"
+                      variant="outline"
+                      className="border-green-500/30 hover:bg-green-500/10"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                      Open
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Tunnel Details */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+                <div className="text-xs text-white/60 mb-1">Subdomain</div>
+                <div className="text-sm font-mono text-white">{tunnel.subdomain}</div>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+                <div className="text-xs text-white/60 mb-1">Protocol</div>
+                <div className="text-sm text-white uppercase">{tunnel.protocol}</div>
+              </div>
+            </div>
+
+            {/* Manage Button */}
+            <div className="mt-4 pt-4 border-t border-green-500/20">
+              <Button
+                onClick={onOpenModal}
+                variant="outline"
+                size="sm"
+                className="border-green-500/30 hover:bg-green-500/10 text-green-300"
+              >
+                Manage Tunnel
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* No Tunnel */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                <Globe className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-blue-300 mb-2">Create Public Tunnel</h3>
+                <p className="text-sm text-blue-200/80 mb-3">
+                  Make this process publicly accessible on the internet with a custom subdomain.
+                  Perfect for sharing demos, testing webhooks, or providing temporary access.
+                </p>
+                <ul className="space-y-1.5 text-xs text-blue-200/70">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3 h-3 text-blue-400" />
+                    Custom subdomain (e.g., my-app.localshare.tech)
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3 h-3 text-blue-400" />
+                    Automatic HTTPS for HTTP services
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3 h-3 text-blue-400" />
+                    No configuration or port forwarding needed
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <Button
+              onClick={onOpenModal}
+              disabled={dashboard.status !== 'running' || !sessionToken}
+              className="bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] hover:opacity-90"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create Public Tunnel
+            </Button>
+
+            {dashboard.status !== 'running' && (
+              <p className="text-xs text-white/40 mt-3">
+                Process must be running to create a tunnel
+              </p>
+            )}
+            {!sessionToken && dashboard.status === 'running' && (
+              <p className="text-xs text-white/40 mt-3">
+                Loading authentication...
+              </p>
+            )}
+          </div>
+
+          {/* Info: Paid Subscription Required */}
+          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+            <div className="flex gap-2 text-xs text-yellow-200/80">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium mb-1">Paid Subscription Required</p>
+                <p>Public tunnels require an active paid relay subscription.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function ComingSoonSection() {
   return (
     <Section title={<><Lock className="w-4 h-4" />Advanced Features (Coming Soon)</>}>
@@ -770,9 +972,32 @@ function ComingSoonSection() {
 export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
   const [dashboard, setDashboard] = useState<ProcessDashboardType | null>(null);
   const [availability, setAvailability] = useState<ProcessAvailability | null>(null);
+  const [tunnel, setTunnel] = useState<ProcessTunnel | null>(null);
+  const [sessionToken, setSessionToken] = useState<string>('');
+  const [isTunnelModalOpen, setIsTunnelModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout>();
+
+  // Load tunnel data
+  const loadTunnel = useCallback(async () => {
+    try {
+      if (!sessionToken) {
+        console.warn('No session token available for loading tunnel');
+        setTunnel(null);
+        return;
+      }
+
+      const tunnelData = await invoke<ProcessTunnel | null>('get_process_tunnel', {
+        token: sessionToken,
+        processId,
+      });
+      setTunnel(tunnelData);
+    } catch (error) {
+      console.error('Failed to load tunnel:', error);
+      setTunnel(null);
+    }
+  }, [processId, sessionToken]);
 
   const loadDashboard = useCallback(async (isInitial = false) => {
     try {
@@ -780,7 +1005,7 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         setLoading(true);
         setError(null);
       }
-      
+
       // Get process information from multiple sources
       const [processInfo, sharedProcesses, processDisplayName, processAvailability] = await Promise.all([
         invoke<any>('get_process_info', { processId }).catch(() => null),
@@ -887,6 +1112,8 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         local_port: config?.port || 0,
         p2p_port: 0,
         connection_status: status === 'running' ? 'active' : 'inactive',
+        service_type: config?.service_type || sharedProcess?.service_type || undefined,
+        protocol: config?.protocol || sharedProcess?.protocol || undefined,
         grid_members_connected: [],
         owner_id: sharedProcess?.user_id || "current_user",
         owner_name: isOwner ? "You" : "Unknown User",
@@ -927,21 +1154,46 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
     }
   }, [processId, gridId]);
   
+  // Fetch session token once on mount
+  useEffect(() => {
+    const fetchToken = async () => {
+      try {
+        const token = await invoke<string>('get_auth_token');
+        if (token) {
+          setSessionToken(token);
+        }
+      } catch (error) {
+        console.error('Failed to get auth token:', error);
+      }
+    };
+    fetchToken();
+  }, []);
+
+  // Load tunnel when session token is available
+  useEffect(() => {
+    if (sessionToken) {
+      loadTunnel();
+    }
+  }, [sessionToken, loadTunnel]);
+
   useEffect(() => {
     // Initial load
     loadDashboard(true);
-    
+
     // Set up polling interval - every 10 seconds to reduce UI interruptions
     intervalRef.current = setInterval(() => {
       loadDashboard(false);
+      if (sessionToken) {
+        loadTunnel();
+      }
     }, 10000);
-    
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [loadDashboard]);
+  }, [loadDashboard, sessionToken, loadTunnel]);
   
   if (loading) return <DashboardSkeleton />;
   if (error) return <ErrorState message={error} />;
@@ -972,6 +1224,38 @@ export function ProcessDashboard({ processId, gridId }: ProcessDashboardProps) {
         gridId={gridId}
         processId={processId}
         availability={availability || undefined}
+      />
+
+      <PublicTunnelSection
+        dashboard={dashboard}
+        processId={processId}
+        gridId={gridId}
+        tunnel={tunnel}
+        sessionToken={sessionToken}
+        onOpenModal={() => setIsTunnelModalOpen(true)}
+        onTunnelChange={loadTunnel}
+      />
+
+      <ProcessTunnelModal
+        isOpen={isTunnelModalOpen}
+        onClose={() => setIsTunnelModalOpen(false)}
+        token={sessionToken}
+        processId={processId}
+        gridId={gridId}
+        processName={dashboard.name}
+        serviceType={dashboard.service_type}
+        existingTunnel={tunnel}
+        onTunnelCreated={(newTunnel) => {
+          setTunnel(newTunnel);
+          loadTunnel();
+        }}
+        onTunnelUpdated={() => {
+          loadTunnel();
+        }}
+        onTunnelDeleted={() => {
+          setTunnel(null);
+          loadTunnel();
+        }}
       />
 
       <ComingSoonSection />
