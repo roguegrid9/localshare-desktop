@@ -7,6 +7,7 @@ use webrtc::data_channel::RTCDataChannel;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bytes::Bytes;
+use base64::{Engine as _, engine::general_purpose};
 
 pub struct HttpTunnel {
     target_port: u16,
@@ -130,7 +131,7 @@ impl HttpTunnel {
                     let p2p_message = serde_json::json!({
                         "type": "http_request",
                         "target_port": target_port,
-                        "data": base64::encode(request_data)
+                        "data": general_purpose::STANDARD.encode(request_data)
                     });
 
                     let message_bytes = p2p_message.to_string().into_bytes();
@@ -170,22 +171,59 @@ impl HttpTunnel {
     }
 
     pub async fn start(&mut self, data_channel: Arc<RTCDataChannel>) -> Result<u16> {
-        Ok(3001)
+        // Set running flag
+        {
+            let mut running = self.is_running.lock().await;
+            *running = true;
+        }
+
+        // Store data channel
+        {
+            let mut dc_guard = self.data_channel.lock().await;
+            *dc_guard = Some(data_channel.clone());
+        }
+
+        // Find an available port
+        let local_port = Self::find_available_port().await?;
+        self.local_port = Some(local_port);
+
+        // Start the proxy server
+        self.start_proxy_server(local_port, data_channel).await?;
+
+        Ok(local_port)
     }
 
     pub async fn stop(&mut self) -> Result<()> {
-        // Implementation from your Transport trait impl
+        // Set running flag to false
+        {
+            let mut running = self.is_running.lock().await;
+            *running = false;
+        }
+
+        // Close the listener
+        {
+            let mut listener_guard = self.listener.lock().await;
+            *listener_guard = None;
+        }
+
+        // Clear data channel
+        {
+            let mut dc_guard = self.data_channel.lock().await;
+            *dc_guard = None;
+        }
+
+        log::info!("HTTP tunnel stopped on port {}", self.local_port.unwrap_or(0));
         Ok(())
     }
 
     pub fn get_connection_info(&self) -> TransportInfo {
-        // Implementation from your Transport trait impl
+        let local_port = self.local_port.unwrap_or(0);
         TransportInfo {
             transport_type: "http".to_string(),
-            local_port: 3001,
+            local_port,
             target_port: Some(self.target_port),
-            connection_url: Some(format!("http://localhost:3001")),
-            instructions: "HTTP tunnel active".to_string(),
+            connection_url: Some(format!("http://localhost:{}", local_port)),
+            instructions: format!("HTTP tunnel active on http://localhost:{} -> remote port {}", local_port, self.target_port),
         }
     }
 }

@@ -30,17 +30,31 @@ pub async fn connect_frp_relay(
     api_client: State<'_, CoordinatorClient>,
     token: String,
 ) -> Result<(), String> {
+    log::info!("🔌 Connecting to FRP relay...");
+
     // Get credentials from API
+    log::info!("Fetching relay credentials from API");
     let response = api_client
         .get_relay_credentials(&token)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("Failed to get relay credentials: {}", e);
+            e.to_string()
+        })?;
+
+    log::info!("Received credentials for {} server(s)", response.servers.len());
 
     // Get tunnels
+    log::info!("Fetching tunnel list from API");
     let tunnels = api_client
         .list_tunnels(&token)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("Failed to get tunnels: {}", e);
+            e.to_string()
+        })?;
+
+    log::info!("Found {} tunnel(s) to configure", tunnels.len());
 
     // Convert API tunnels to FRP tunnel configs
     let tunnel_configs: Vec<TunnelConfig> = tunnels
@@ -52,6 +66,10 @@ pub async fn connect_frp_relay(
             protocol: t.protocol.clone(),
         })
         .collect();
+
+    for tunnel in &tunnel_configs {
+        log::info!("  - Tunnel: {}.* -> localhost:{} ({})", tunnel.subdomain, tunnel.local_port, tunnel.protocol);
+    }
 
     // Select best server by latency (do this BEFORE acquiring the lock)
     if response.servers.is_empty() {
@@ -78,17 +96,27 @@ pub async fn connect_frp_relay(
     };
 
     // Initialize FRP client if not exists (acquire lock AFTER async operations)
+    log::info!("Initializing FRP client");
     let mut frp_guard = frp_state.client.lock().unwrap();
     if frp_guard.is_none() {
-        *frp_guard = Some(FRPClient::new(&app_handle).map_err(|e| e.to_string())?);
+        log::info!("Creating new FRP client instance");
+        *frp_guard = Some(FRPClient::new(&app_handle).map_err(|e| {
+            log::error!("Failed to create FRP client: {}", e);
+            e.to_string()
+        })?);
     }
 
     // Connect
+    log::info!("Connecting FRP client to server");
     if let Some(frp) = frp_guard.as_mut() {
         frp.connect(frp_creds, tunnel_configs)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                log::error!("Failed to connect FRP client: {}", e);
+                e.to_string()
+            })?;
     }
 
+    log::info!("✅ FRP relay connected successfully");
     Ok(())
 }
 
@@ -97,10 +125,17 @@ pub async fn connect_frp_relay(
 pub async fn disconnect_frp_relay(
     frp_state: State<'_, FRPState>,
 ) -> Result<(), String> {
+    log::info!("🔌 Disconnecting from FRP relay...");
     let mut frp_guard = frp_state.client.lock().unwrap();
 
     if let Some(frp) = frp_guard.as_mut() {
-        frp.disconnect().map_err(|e| e.to_string())?;
+        frp.disconnect().map_err(|e| {
+            log::error!("Failed to disconnect FRP client: {}", e);
+            e.to_string()
+        })?;
+        log::info!("✅ FRP relay disconnected");
+    } else {
+        log::info!("FRP client not initialized, nothing to disconnect");
     }
 
     Ok(())

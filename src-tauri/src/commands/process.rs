@@ -10,8 +10,6 @@ pub async fn initialize_process_manager(
     app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("Tauri command: initialize_process_manager called");
-    
     // Check if already initialized - PREVENT MULTIPLE INSTANCES
     {
         let manager_state = state.process_manager.lock().await;
@@ -35,8 +33,6 @@ pub async fn start_process(
     config: ProcessConfig,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    log::info!("Tauri command: start_process called for grid: {}", grid_id);
-    
     // Validate config
     if let Err(e) = config.validate() {
         return Err(e);
@@ -60,8 +56,6 @@ pub async fn start_grid_process(
     config: ProcessConfig,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    log::info!("Tauri command: start_grid_process called for grid: {}", grid_id);
-    
     // Validate config
     if let Err(e) = config.validate() {
         return Err(e);
@@ -98,8 +92,6 @@ pub async fn stop_grid_process(
     grid_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("Tauri command: stop_grid_process called for grid: {}", grid_id);
-
     // Get the process_id before stopping (we need it to close tabs)
     let process_id = {
         let manager_state = state.process_manager.lock().await;
@@ -147,9 +139,7 @@ pub async fn stop_grid_process(
             let window_manager = window_manager_clone.lock().await;
             if let Some(manager) = window_manager.as_ref() {
                 match manager.close_tabs_by_process(&pid_clone).await {
-                    Ok(closed_tabs) => {
-                        log::info!("Closed {} tabs for stopped grid process {}", closed_tabs.len(), pid_clone);
-                    }
+                    Ok(_) => {}
                     Err(e) => {
                         log::warn!("Failed to close tabs for process {}: {}", pid_clone, e);
                     }
@@ -158,7 +148,6 @@ pub async fn stop_grid_process(
         });
     }
 
-    log::info!("stop_process command completing successfully");
     Ok(())
 }
 
@@ -169,8 +158,6 @@ pub async fn send_grid_process_data(
     data: Vec<u8>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::debug!("Tauri command: send_grid_process_data called for grid: {}", grid_id);
-    
     let p2p_state = state.p2p_manager.lock().await;
     if let Some(p2p_manager) = p2p_state.as_ref() {
         // Send data via the P2P connection (will route to process if we're connected to host)
@@ -189,8 +176,6 @@ pub async fn stop_process(
     grid_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("Tauri command: stop_process called for grid: {}", grid_id);
-
     // Get the process_id before stopping (we need it to close tabs)
     let process_id = {
         let manager_state = state.process_manager.lock().await;
@@ -224,9 +209,7 @@ pub async fn stop_process(
             let window_manager = window_manager_clone.lock().await;
             if let Some(manager) = window_manager.as_ref() {
                 match manager.close_tabs_by_process(&pid_clone).await {
-                    Ok(closed_tabs) => {
-                        log::info!("Closed {} tabs for stopped process {}", closed_tabs.len(), pid_clone);
-                    }
+                    Ok(_) => {}
                     Err(e) => {
                         log::warn!("Failed to close tabs for process {}: {}", pid_clone, e);
                     }
@@ -235,7 +218,6 @@ pub async fn stop_process(
         });
     }
 
-    log::info!("stop_grid_process command completing successfully");
     Ok(())
 }
 
@@ -245,8 +227,6 @@ pub async fn get_process_status(
     grid_id: String,
     state: State<'_, AppState>,
 ) -> Result<ProcessStatus, String> {
-    log::info!("Tauri command: get_process_status called for grid: {}", grid_id);
-    
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         manager.get_process_status(grid_id).await.map_err(|e| {
@@ -265,8 +245,6 @@ pub async fn send_process_input(
     input: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::debug!("Tauri command: send_process_input called for grid: {}", grid_id);
-    
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         // Convert string to bytes (add newline for commands)
@@ -287,8 +265,6 @@ pub async fn send_process_input(
 pub async fn get_active_processes(
     state: State<'_, AppState>,
 ) -> Result<Vec<ProcessInfo>, String> {
-    log::info!("Tauri command: get_active_processes called");
-    
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         // CHANGE: Use get_all_processes_including_terminals instead of get_active_processes
@@ -303,47 +279,31 @@ pub async fn get_process_session_id(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
-    log::info!("Getting session ID for process: {}", process_id);
-    
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         // FIRST: Try the new direct lookup method
         if let Some(session_id) = manager.get_terminal_session_id_by_process_id(&process_id).await {
-            log::info!("Found session ID for process {} via direct lookup: {}", process_id, session_id);
             return Ok(Some(session_id));
         }
-        
-        log::info!("No session ID found via direct lookup, trying fallback method");
-        
+
         // FALLBACK: Try the old method for backwards compatibility
         let all_processes = manager.get_all_processes_including_terminals().await;
-        
-        log::info!("Found {} active processes", all_processes.len());
-        
+
         for process in all_processes {
-            log::info!("Checking process: {} (looking for: {})", process.process_id, process_id);
-            
             if process.process_id == process_id {
-                log::info!("Found matching process! Config: {:?}", process.config);
-                
                 // For recovered terminals, try to extract session ID from the config
                 if process.config.executable_path.starts_with("Recovered Terminal (") {
                     // Extract the session ID from the ProcessManager directly
                     if let Some(session_id) = manager.get_terminal_session_id_by_process_id(&process_id).await {
-                        log::info!("Extracted session ID from ProcessManager: {}", session_id);
                         return Ok(Some(session_id));
                     }
                 }
-                
+
                 // Use the existing bridge function to extract session ID
                 let session_id = crate::process::terminal_process::TerminalProcessBridge::extract_session_id_from_process(&process.config);
-                log::info!("Extracted session ID via bridge: {:?}", session_id);
-                
                 return Ok(session_id);
             }
         }
-        
-        log::warn!("No matching process found for ID: {}", process_id);
         Ok(None)
     } else {
         Err("Process manager not initialized".to_string())
@@ -355,15 +315,12 @@ pub async fn get_process_info(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    log::info!("Getting process info for: {}", process_id);
-    
     let manager_state = state.process_manager.lock().await;
     if let Some(manager) = manager_state.as_ref() {
         let all_processes = manager.get_all_processes_including_terminals().await;
         
         for process in all_processes {
             if process.process_id == process_id {
-                log::info!("Found process: {} with executable_path: {}", process_id, process.config.executable_path);
                 return Ok(serde_json::json!({
                     "process_id": process.process_id,
                     "grid_id": process.grid_id,
@@ -379,7 +336,6 @@ pub async fn get_process_info(
             }
         }
 
-        log::debug!("Process not found in local ProcessManager: {} (may be a shared process)", process_id);
         Err(format!("Process not found locally: {}", process_id))
     } else {
         Err("Process manager not initialized".to_string())
@@ -396,8 +352,6 @@ pub async fn create_shared_process(
     use crate::api::types::CreateSharedProcessRequest;
     use crate::api::client::CoordinatorClient;
     use crate::auth::storage::get_user_session;
-    
-    log::info!("Tauri command: create_shared_process called for grid: {}", grid_id);
 
     // Get the authentication token
     let session = match get_user_session().await {
@@ -491,8 +445,6 @@ pub async fn create_shared_process(
         // Don't fail if heartbeat fails, but this is concerning
     }
 
-    log::info!("Successfully created shared process: {} for grid: {}", api_response.id, grid_id);
-
     Ok(api_response.id)
 }
 
@@ -507,7 +459,6 @@ pub struct ProcessHealthStatus {
 pub async fn check_process_health(
     port: u16,
 ) -> Result<ProcessHealthStatus, String> {
-    log::info!("Checking process health on port {}", port);
 
     #[cfg(target_os = "windows")]
     {
@@ -527,7 +478,6 @@ pub async fn check_process_health(
                 // The PID is the last column
                 if let Some(pid_str) = parts.last() {
                     if let Ok(pid) = pid_str.parse::<u32>() {
-                        log::info!("Port {} is listening, PID: {}", port, pid);
                         return Ok(ProcessHealthStatus {
                             healthy: true,
                             current_pid: Some(pid),
@@ -536,7 +486,6 @@ pub async fn check_process_health(
                 }
 
                 // Port is listening but couldn't extract PID
-                log::warn!("Port {} is listening but couldn't extract PID", port);
                 return Ok(ProcessHealthStatus {
                     healthy: true,
                     current_pid: None,
@@ -544,7 +493,6 @@ pub async fn check_process_health(
             }
         }
 
-        log::info!("Port {} not listening", port);
         Ok(ProcessHealthStatus {
             healthy: false,
             current_pid: None,
@@ -570,7 +518,6 @@ pub async fn check_process_health(
                     if let Some(pid_part) = users_part.split("pid=").nth(1) {
                         if let Some(pid_str) = pid_part.split(',').next() {
                             if let Ok(pid) = pid_str.parse::<u32>() {
-                                log::info!("Port {} is listening, PID: {}", port, pid);
                                 return Ok(ProcessHealthStatus {
                                     healthy: true,
                                     current_pid: Some(pid),
@@ -581,7 +528,6 @@ pub async fn check_process_health(
                 }
 
                 // Port is listening but couldn't extract PID (maybe permission issue)
-                log::warn!("Port {} is listening but couldn't extract PID", port);
                 return Ok(ProcessHealthStatus {
                     healthy: true,
                     current_pid: None,
@@ -589,7 +535,6 @@ pub async fn check_process_health(
             }
         }
 
-        log::info!("Port {} not listening", port);
         Ok(ProcessHealthStatus {
             healthy: false,
             current_pid: None,
@@ -603,8 +548,6 @@ pub async fn get_grid_shared_processes(
     grid_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<SharedProcess>, String> {
-    log::info!("Tauri command: get_grid_shared_processes called for grid: {}", grid_id);
-    
     // Get user session for authentication
     let token = match crate::auth::get_user_session().await {
         Ok(Some(session)) => session.token,
@@ -620,11 +563,10 @@ pub async fn get_grid_shared_processes(
         let mut client_token = coordinator_client.token.write().await;
         *client_token = token.clone();
     }
-    
+
+
     match coordinator_client.get_grid_shared_processes(&token, &grid_id).await {
         Ok(api_response) => {
-            log::info!("Successfully fetched {} shared processes from API for grid: {}", api_response.processes.len(), grid_id);
-            
             // Convert API response to SharedProcess format and update local state
             let mut shared_processes = state.shared_processes.lock().await;
             let mut result = Vec::new();
@@ -654,15 +596,13 @@ pub async fn get_grid_shared_processes(
                         _ => SharedProcessStatus::Running,
                     },
                     last_seen_at: api_process.last_seen_at.and_then(|ts| {
-                        use chrono::{DateTime, Utc};
-                        log::debug!("Parsing last_seen_at: {}", ts);
+                        use chrono::DateTime;
                         DateTime::parse_from_rfc3339(&ts)
                             .ok()
                             .map(|dt| dt.timestamp() as u64)
                     }),
                     created_at: {
-                        use chrono::{DateTime, Utc};
-                        log::debug!("Parsing created_at: {}", api_process.created_at);
+                        use chrono::DateTime;
                         DateTime::parse_from_rfc3339(&api_process.created_at)
                             .map(|dt| dt.timestamp() as u64)
                             .unwrap_or_else(|e| {
@@ -671,8 +611,7 @@ pub async fn get_grid_shared_processes(
                             })
                     },
                     updated_at: {
-                        use chrono::{DateTime, Utc};
-                        log::debug!("Parsing updated_at: {}", api_process.updated_at);
+                        use chrono::DateTime;
                         DateTime::parse_from_rfc3339(&api_process.updated_at)
                             .map(|dt| dt.timestamp() as u64)
                             .unwrap_or_else(|e| {
@@ -691,9 +630,8 @@ pub async fn get_grid_shared_processes(
         },
         Err(e) => {
             log::error!("Failed to fetch shared processes from API: {}", e);
-            
+
             // Fallback to local state if API fails
-            log::info!("Falling back to local state for shared processes");
             let shared_processes = state.shared_processes.lock().await;
             let grid_processes: Vec<SharedProcess> = shared_processes
                 .values()
@@ -714,8 +652,6 @@ async fn start_process_heartbeat(
     grid_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("🫀 Starting heartbeat for shared process {} in grid {}", process_id, grid_id);
-
     let process_id_clone = process_id.clone();
     let grid_id_clone = grid_id.clone();
 
@@ -727,23 +663,14 @@ async fn start_process_heartbeat(
             interval.tick().await;
             heartbeat_count += 1;
 
-            match send_process_heartbeat(&process_id_clone, &grid_id_clone).await {
-                Ok(_) => {
-                    // Log every 10th heartbeat (every 5 minutes)
-                    if heartbeat_count % 10 == 0 {
-                        log::info!("🫀 Shared process heartbeat #{} sent for process {}", heartbeat_count, &process_id_clone);
-                    }
-                }
-                Err(e) => {
-                    log::error!("❌ Shared process heartbeat #{} FAILED for process {}: {}", heartbeat_count, &process_id_clone, e);
-                }
+            if let Err(e) = send_process_heartbeat(&process_id_clone, &grid_id_clone).await {
+                log::error!("Heartbeat failed for process {}: {}", &process_id_clone, e);
             }
         }
     });
 
     let mut heartbeats = state.shared_process_heartbeats.lock().await;
     heartbeats.insert(process_id.clone(), task);
-    log::info!("✅ Heartbeat task started for shared process: {}", process_id);
 
     Ok(())
 }
@@ -753,12 +680,9 @@ async fn stop_process_heartbeat(
     process_id: &str,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("🛑 Stopping heartbeat for shared process {}", process_id);
-
     let mut heartbeats = state.shared_process_heartbeats.lock().await;
     if let Some(task) = heartbeats.remove(process_id) {
         task.abort();
-        log::info!("✅ Heartbeat task stopped for shared process: {}", process_id);
     }
 
     Ok(())
@@ -825,15 +749,10 @@ async fn resume_all_shared_process_heartbeats(
     use crate::auth::storage::get_user_session;
     use crate::api::client::CoordinatorClient;
 
-    log::info!("🔄 Resuming heartbeats for all shared processes...");
-
     // Get user session
     let session = match get_user_session().await {
         Ok(Some(session)) => session,
-        Ok(None) => {
-            log::info!("No user session found, skipping heartbeat resumption");
-            return Ok(());
-        }
+        Ok(None) => return Ok(()),
         Err(e) => {
             log::error!("Failed to get user session: {}", e);
             return Ok(());
@@ -850,8 +769,6 @@ async fn resume_all_shared_process_heartbeats(
         }
     };
 
-    log::info!("Fetched {} grids to check for shared processes", grids.len());
-
     // Get THIS device's ID to filter processes
     let my_device_id = match crate::auth::storage::get_device_id().await {
         Ok(id) => id,
@@ -867,8 +784,6 @@ async fn resume_all_shared_process_heartbeats(
     for grid in grids {
         match client.get_grid_shared_processes(&session.token, &grid.id).await {
             Ok(response) => {
-                log::info!("Grid {} has {} shared processes", grid.id, response.processes.len());
-
                 for process in response.processes {
                     // Check if this user owns the process
                     if process.user_id != session.user_id {
@@ -878,14 +793,9 @@ async fn resume_all_shared_process_heartbeats(
                     // Check device ownership
                     let should_resume = if process.device_id == my_device_id {
                         // Exact match - this is our process
-                        log::info!("Resuming heartbeat for owned process {} in grid {} (device: {})",
-                                   process.id, grid.id, &my_device_id[..8]);
                         true
                     } else if process.device_id.is_empty() || process.device_id.starts_with("migration-") {
                         // Legacy process without device_id or migration placeholder - adopt it
-                        log::info!("Adopting legacy process {} in grid {} (old device_id: {:?}, new device_id: {})",
-                                   process.id, grid.id, &process.device_id, &my_device_id[..8]);
-
                         // Update the device_id in the database
                         if let Err(e) = update_process_device_id(&session.token, &grid.id, &process.id, &my_device_id).await {
                             log::error!("Failed to update device_id for process {}: {}", process.id, e);
@@ -899,18 +809,12 @@ async fn resume_all_shared_process_heartbeats(
                             let age = now.signed_duration_since(last_seen_time.with_timezone(&chrono::Utc));
 
                             if age.num_minutes() < 10 {
-                                log::info!("Adopting recently active process {} in grid {} (age: {} minutes, old device: {}, new device: {})",
-                                           process.id, grid.id, age.num_minutes(), &process.device_id[..8], &my_device_id[..8]);
-
                                 // Update the device_id in the database
                                 if let Err(e) = update_process_device_id(&session.token, &grid.id, &process.id, &my_device_id).await {
                                     log::error!("Failed to update device_id for process {}: {}", process.id, e);
                                 }
                                 true
                             } else {
-                                // Too old - likely belongs to another machine
-                                log::debug!("Skipping old process {} - last seen {} minutes ago (theirs: {}, ours: {})",
-                                           process.id, age.num_minutes(), &process.device_id[..8], &my_device_id[..8]);
                                 false
                             }
                         } else {
@@ -918,9 +822,6 @@ async fn resume_all_shared_process_heartbeats(
                             false
                         }
                     } else {
-                        // Different device_id and no last_seen - belongs to another machine
-                        log::debug!("Skipping process {} - belongs to different device (theirs: {}, ours: {})",
-                                   process.id, &process.device_id[..8], &my_device_id[..8]);
                         false
                     };
 
@@ -982,10 +883,6 @@ async fn resume_all_shared_process_heartbeats(
                             log::error!("Failed to resume heartbeat for process {}: {}", process.id, e);
                         }
 
-                        // Note: We don't claim grid-level hosting here. Each process owner can
-                        // accept connections to their own process without needing to be the grid host.
-                        // Grid-level hosting is only needed for other features, not process-to-process connections.
-                        log::info!("Process {} ready to accept P2P connections without grid-level hosting", process.id);
                     }
                 }
             }
@@ -995,7 +892,9 @@ async fn resume_all_shared_process_heartbeats(
         }
     }
 
-    log::info!("✅ Shared process heartbeat resumption complete - resumed {} processes", total_processes);
+    if total_processes > 0 {
+        log::info!("Resumed {} shared process heartbeats", total_processes);
+    }
     Ok(())
 }
 
@@ -1005,19 +904,13 @@ pub async fn start_p2p_sharing(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("Tauri command: start_p2p_sharing called for process: {}", process_id);
-    
     // Get the shared process
     let shared_process = {
         let shared_processes = state.shared_processes.lock().await;
         shared_processes.get(&process_id).cloned()
     };
-    
+
     if let Some(process) = shared_process {
-        // TODO: Implement actual P2P sharing logic
-        // For now, just log that we're starting sharing
-        log::info!("Starting P2P sharing for process: {} on port: {}", process_id, process.config.port);
-        
         // Update last seen timestamp
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1041,8 +934,6 @@ pub async fn stop_p2p_sharing(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!("Tauri command: stop_p2p_sharing called for process: {}", process_id);
-    
     // Update process status to stopped
     {
         let mut shared_processes = state.shared_processes.lock().await;
@@ -1058,9 +949,6 @@ pub async fn stop_p2p_sharing(
             return Err(format!("Shared process not found: {}", process_id));
         }
     }
-    
-    // TODO: Implement actual P2P sharing stop logic
-    log::info!("Stopped P2P sharing for process: {}", process_id);
 
     // Stop the heartbeat
     if let Err(e) = stop_process_heartbeat(&process_id, state.clone()).await {
@@ -1081,7 +969,6 @@ pub async fn get_process_availability(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<Option<crate::process::types::ProcessAvailability>, String> {
-    log::info!("Getting availability for process {} in grid {}", process_id, grid_id);
 
     let p2p_state = state.p2p_manager.lock().await;
     if let Some(p2p_manager) = p2p_state.as_ref() {
@@ -1103,12 +990,6 @@ pub async fn connect_to_process(
     local_port: Option<u16>,
     state: State<'_, AppState>,
 ) -> Result<crate::p2p::ProcessConnectionInfo, String> {
-    log::info!(
-        "Connecting to process {} in grid {} (local port: {:?})",
-        process_id,
-        grid_id,
-        local_port
-    );
 
     let p2p_state = state.p2p_manager.lock().await;
     if let Some(p2p_manager) = p2p_state.as_ref() {
@@ -1129,11 +1010,6 @@ pub async fn disconnect_from_process(
     connection_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    log::info!(
-        "Disconnecting from process {} in grid {}",
-        process_id,
-        grid_id
-    );
 
     let p2p_state = state.p2p_manager.lock().await;
     if let Some(p2p_manager) = p2p_state.as_ref() {
@@ -1153,17 +1029,10 @@ pub async fn cleanup_stale_connection(
     process_id: String,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    log::info!(
-        "Cleaning up stale connection for process {} in grid {}",
-        process_id,
-        grid_id
-    );
-
     // Get process availability to check if we have an existing connection
     let availability = match get_process_availability(grid_id.clone(), process_id.clone(), state.clone()).await {
         Ok(Some(avail)) => avail,
         Ok(None) => {
-            log::info!("No availability data, no cleanup needed");
             return Ok(false);
         }
         Err(e) => {
@@ -1175,10 +1044,8 @@ pub async fn cleanup_stale_connection(
     // If we're connected but connection_id exists, disconnect
     if matches!(availability.local_status, crate::process::types::LocalProcessStatus::Connected) {
         if let Some(conn_id) = availability.connection_id {
-            log::info!("Found stale connection {}, disconnecting...", conn_id);
             match disconnect_from_process(grid_id, process_id, conn_id, state).await {
                 Ok(_) => {
-                    log::info!("Successfully cleaned up stale connection");
                     // Wait a bit for cleanup to propagate
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     return Ok(true);
@@ -1188,8 +1055,6 @@ pub async fn cleanup_stale_connection(
                     // Continue anyway, maybe it's already gone
                 }
             }
-        } else {
-            log::warn!("Status is 'connected' but no connection_id found - possible stale state");
         }
     }
 

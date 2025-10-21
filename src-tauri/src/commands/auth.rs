@@ -59,9 +59,9 @@ pub async fn promote_account(request: PromotionRequest) -> Result<PromotionRespo
 #[tauri::command]
 pub async fn promote_account_simple(supabase_access_token: String) -> Result<PromotionResponse, String> {
     log::info!("Tauri command: promote_account_simple called");
-    
+
     // First check if we have an existing session to promote
-    match get_current_user_state().await {
+    let result = match get_current_user_state().await {
         Ok(user_state) if user_state.is_provisional => {
             // We have an existing provisional session, use the normal promotion
             log::info!("Found existing provisional session, promoting normally");
@@ -82,7 +82,19 @@ pub async fn promote_account_simple(supabase_access_token: String) -> Result<Pro
                     e.to_string()
                 })
         }
+    };
+
+    // If authentication succeeded, cleanup stale tunnels
+    if result.is_ok() {
+        log::info!("Authentication successful, cleaning up stale tunnels");
+        tokio::spawn(async {
+            if let Err(e) = cleanup_stale_tunnels().await {
+                log::error!("Failed to cleanup stale tunnels after authentication: {}", e);
+            }
+        });
     }
+
+    result
 }
 
 #[tauri::command]
@@ -529,6 +541,44 @@ const OAUTH_SUCCESS_HTML: &str = r#"
 </body>
 </html>
 "#;
+
+// Cleanup stale tunnels after authentication
+#[tauri::command]
+pub async fn cleanup_stale_tunnels() -> Result<usize, String> {
+    log::info!("Tauri command: cleanup_stale_tunnels called");
+
+    // Get the authentication token
+    let session = match crate::auth::storage::get_user_session().await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            log::warn!("No user session available for tunnel cleanup");
+            return Ok(0);
+        },
+        Err(e) => {
+            log::error!("Failed to get user session for tunnel cleanup: {}", e);
+            return Ok(0);
+        }
+    };
+
+    // Create coordinator client
+    let coordinator_client = crate::api::client::CoordinatorClient::new();
+
+    // Delete all tunnels
+    match coordinator_client.delete_all_tunnels(&session.token).await {
+        Ok(count) => {
+            if count > 0 {
+                log::info!("Cleaned up {} stale tunnel(s) - FRP will reconnect automatically", count);
+            } else {
+                log::info!("No stale tunnels to clean up");
+            }
+            Ok(count)
+        },
+        Err(e) => {
+            log::error!("Failed to cleanup stale tunnels: {}", e);
+            Ok(0)
+        }
+    }
+}
 
 // Start OAuth callback server and return the port
 #[tauri::command]

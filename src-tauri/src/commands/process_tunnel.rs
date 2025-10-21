@@ -40,20 +40,31 @@ pub async fn create_process_tunnel(
     grid_id: String,
     subdomain: String,
 ) -> Result<ProcessTunnel, String> {
+    log::info!("🚇 Creating public tunnel for process {} with subdomain '{}'", process_id, subdomain);
+
     let request = CreateProcessTunnelRequest {
-        subdomain,
+        subdomain: subdomain.clone(),
         grid_id,
     };
 
     // Create tunnel via API
+    log::info!("Creating tunnel via API");
     let tunnel = client
         .create_process_tunnel(&token, &process_id, request)
         .await
-        .map_err(|e| format!("Failed to create process tunnel: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to create tunnel via API: {}", e);
+            format!("Failed to create process tunnel: {}", e)
+        })?;
+
+    log::info!("✅ Tunnel created in database: {} -> {}", subdomain, tunnel.public_url);
 
     // Reconnect FRP client with new tunnel list
+    log::info!("Reconnecting FRP client to register new tunnel");
     disconnect_frp_relay(frp_state.clone()).await?;
     connect_frp_relay(app_handle, frp_state, client, token).await?;
+
+    log::info!("✅ FRP client reconnected with new tunnel");
 
     Ok(tunnel)
 }

@@ -669,3 +669,79 @@ impl WebSocketManager {
 
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_invite_payload_serialization() {
+        let payload = SessionInvitePayload {
+            to_user_id: "user-123".to_string(),
+            grid_id: "grid-456".to_string(),
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["to_user_id"], "user-123");
+        assert_eq!(json["grid_id"], "grid-456");
+    }
+
+    #[test]
+    fn test_session_invite_payload_deserialization() {
+        let json_str = r#"{"to_user_id": "user-789", "grid_id": "grid-abc"}"#;
+        let payload: SessionInvitePayload = serde_json::from_str(json_str).unwrap();
+
+        assert_eq!(payload.to_user_id, "user-789");
+        assert_eq!(payload.grid_id, "grid-abc");
+    }
+
+    #[test]
+    fn test_presence_event_payload_creation() {
+        let payload = PresenceEventPayload {
+            user_id: "user-active".to_string(),
+            grid_id: "grid-test".to_string(),
+        };
+
+        assert_eq!(payload.user_id, "user-active");
+        assert_eq!(payload.grid_id, "grid-test");
+    }
+
+    #[test]
+    fn test_code_used_payload_contains_all_fields() {
+        let payload = CodeUsedPayload {
+            grid_id: "grid-1".to_string(),
+            code_id: "code-abc".to_string(),
+            used_by: "user-123".to_string(),
+            resource_type: crate::api::types::ResourceType::Process,
+            resource_id: "resource-xyz".to_string(),
+            success: true,
+        };
+
+        assert_eq!(payload.grid_id, "grid-1");
+        assert_eq!(payload.code_id, "code-abc");
+        assert_eq!(payload.used_by, "user-123");
+        assert_eq!(payload.resource_id, "resource-xyz");
+        assert_eq!(payload.success, true);
+    }
+
+    #[test]
+    fn test_share_signal_payload_serialization_and_deserialization() {
+        let original = ShareSignalPayload {
+            share_id: "share-123".to_string(),
+            visitor_id: "visitor-456".to_string(),
+            signal_type: "offer".to_string(),
+            signal_data: serde_json::json!({"sdp": "test-sdp-data"}),
+        };
+
+        // Serialize
+        let json_str = serde_json::to_string(&original).unwrap();
+
+        // Deserialize
+        let deserialized: ShareSignalPayload = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(deserialized.share_id, "share-123");
+        assert_eq!(deserialized.visitor_id, "visitor-456");
+        assert_eq!(deserialized.signal_type, "offer");
+        assert_eq!(deserialized.signal_data["sdp"], "test-sdp-data");
+    }
+}

@@ -32,7 +32,7 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
 
       // Check relay subscription status
       const response = await fetch(
-        'https://roguegrid9-coordinator.fly.dev/api/v1/relay/subscription',
+        'https://api.roguegrid9.com/api/v1/relay/subscription',
         {
           headers: {
             Authorization: `Bearer ${authToken}`,
@@ -75,7 +75,7 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
 
   const proFeatures = [
     '40 concurrent connections',
-    '250GB monthly bandwidth',
+    '50GB monthly bandwidth',
     '6 global server locations',
     'Guaranteed P2P connectivity',
     'Priority relay routing',
@@ -89,10 +89,10 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-heading font-semibold text-text-primary mb-3">
-            Choose Your Plan
+            Beta Launch - Free Pro Access
           </h1>
           <p className="text-text-secondary text-lg">
-            Upgrade to Pro for unlimited relay access and premium features
+            Get free Pro relay access with 50GB bandwidth during our beta launch
           </p>
         </div>
 
@@ -157,14 +157,17 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
               </div>
               <div className="flex items-center gap-2">
                 <CardTitle className="text-2xl">Pro Relay</CardTitle>
+                <Badge className="bg-accent-solid hover:bg-accent-solid text-white border-none px-2 py-0.5 text-xs">
+                  Beta - Free
+                </Badge>
                 {isProUser && (
                   <Badge className="bg-green-600 hover:bg-green-600 text-white border-none px-2 py-0.5 text-xs">
-                    Current Plan
+                    Active
                   </Badge>
                 )}
               </div>
               <CardDescription className="text-text-secondary">
-                Professional relay with guaranteed connectivity
+                Free during beta launch - 50GB bandwidth
               </CardDescription>
             </CardHeader>
 
@@ -172,10 +175,11 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
               <div className="mb-6">
                 <div className="flex items-baseline gap-1">
                   <span className="text-4xl font-heading font-bold bg-gradient-to-r from-accent-gradient-start to-accent-gradient-end bg-clip-text text-transparent">
-                    $3.99
+                    $0
                   </span>
                   <span className="text-text-tertiary text-sm">/month</span>
                 </div>
+                <p className="text-xs text-text-tertiary mt-1">Free during beta launch</p>
               </div>
 
               <ul className="space-y-3">
@@ -202,7 +206,7 @@ export function SubscriptionPage({ onRefresh }: SubscriptionPageProps) {
                   disabled={loading || !token}
                   className="w-full py-2.5 rounded-lg bg-gradient-to-r from-accent-gradient-start to-accent-gradient-end hover:from-accent-gradient-start/90 hover:to-accent-gradient-end/90 text-white font-semibold transition-all shadow-glow hover:shadow-[0_0_30px_rgba(123,92,255,0.7)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Upgrade Now
+                  Activate Free Beta Access
                 </button>
               )}
             </CardFooter>

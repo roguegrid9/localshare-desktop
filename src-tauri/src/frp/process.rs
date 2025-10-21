@@ -1,4 +1,4 @@
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 
@@ -22,15 +22,25 @@ impl FRPProcess {
 
         // Stop existing process if running
         if let Some(mut child) = child_guard.take() {
+            log::info!("Stopping existing FRP client process");
             child.kill().ok();
         }
 
-        // Start new process
+        log::info!("Starting FRP client: {:?} -c {:?}", self.frpc_path, self.config_path);
+
+        // Start new process with stdout/stderr inherited so we can see logs
         let child = Command::new(&self.frpc_path)
             .arg("-c")
             .arg(&self.config_path)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| format!("Failed to start FRP: {}", e))?;
+            .map_err(|e| {
+                log::error!("Failed to spawn FRP client: {}", e);
+                format!("Failed to start FRP: {}", e)
+            })?;
+
+        log::info!("FRP client process started with PID: {}", child.id());
 
         *child_guard = Some(child);
         Ok(())
@@ -40,8 +50,13 @@ impl FRPProcess {
         let mut child_guard = self.child.lock().unwrap();
 
         if let Some(mut child) = child_guard.take() {
+            log::info!("Stopping FRP client process (PID: {})", child.id());
             child.kill()
-                .map_err(|e| format!("Failed to stop FRP: {}", e))?;
+                .map_err(|e| {
+                    log::error!("Failed to kill FRP client: {}", e);
+                    format!("Failed to stop FRP: {}", e)
+                })?;
+            log::info!("FRP client stopped successfully");
         }
 
         Ok(())

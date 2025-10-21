@@ -46,7 +46,7 @@ export function BandwidthTracker({ token, onClose, onStartTrial }: BandwidthTrac
     }
 
     try {
-      const response = await fetch('https://roguegrid9-coordinator.fly.dev/api/v1/relay/subscription', {
+      const response = await fetch('https://api.roguegrid9.com/api/v1/relay/subscription', {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

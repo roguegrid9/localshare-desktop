@@ -2495,6 +2495,36 @@ impl CoordinatorClient {
         Ok(())
     }
 
+    /// Delete all tunnels for the authenticated user (cleanup on app start/shutdown)
+    pub async fn delete_all_tunnels(
+        &self,
+        token: &str,
+    ) -> Result<usize> {
+        log::info!("Deleting all tunnels for user");
+
+        // List all tunnels
+        let tunnels = self.list_tunnels(token).await?;
+        let count = tunnels.len();
+
+        if count == 0 {
+            log::info!("No tunnels to delete");
+            return Ok(0);
+        }
+
+        log::info!("Found {} tunnel(s) to delete", count);
+
+        // Delete each tunnel
+        for tunnel in tunnels {
+            if let Err(e) = self.delete_tunnel(token, tunnel.id.clone()).await {
+                log::warn!("Failed to delete tunnel {}: {}", tunnel.id, e);
+                // Continue deleting other tunnels even if one fails
+            }
+        }
+
+        log::info!("Successfully deleted {} tunnel(s)", count);
+        Ok(count)
+    }
+
     /// Check subdomain availability (public endpoint, no auth required)
     pub async fn check_subdomain(
         &self,

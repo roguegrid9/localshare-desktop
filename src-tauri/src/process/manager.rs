@@ -473,6 +473,30 @@ impl ProcessManager {
                         max_attempts
                     );
 
+                    // Log process shared event
+                    if let Ok(user_state) = crate::auth::storage::get_user_state().await {
+                        if let Some(user_id) = user_state.user_id {
+                            if let Some(logger) = crate::LOGGER.as_ref() {
+                                // Extract process name from executable path
+                                let process_name = config.executable_path
+                                    .split('/')
+                                    .last()
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                let port = detected_port.unwrap_or(0);
+                                let detection_method = if detected_port.is_some() { "auto" } else { "manual" };
+
+                                logger.log_process_shared(
+                                    user_id,
+                                    grid_id.clone(),
+                                    process_name,
+                                    port,
+                                    detection_method,
+                                );
+                            }
+                        }
+                    }
+
                     // Emit successful registration event
                     self.app_handle
                         .emit(

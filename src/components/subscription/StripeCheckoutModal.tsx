@@ -48,7 +48,7 @@ export function StripeCheckoutModal({
       console.log(`[StripeCheckout] Polling attempt ${attempts + 1}/${maxAttempts}`);
       try {
         const response = await fetch(
-          'https://roguegrid9-coordinator.fly.dev/api/v1/relay/subscription',
+          'https://api.roguegrid9.com/api/v1/relay/subscription',
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -111,7 +111,7 @@ export function StripeCheckoutModal({
 
     try {
       const response = await fetch(
-        'https://roguegrid9-coordinator.fly.dev/api/v1/relay/checkout',
+        'https://api.roguegrid9.com/api/v1/relay/checkout',
         {
           method: 'POST',
           headers: {

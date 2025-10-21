@@ -36,6 +36,7 @@ impl FRPConfigGenerator {
         );
 
         // Add tunnel configurations
+        // Use subdomain as proxy name (FRP-compatible, human-readable)
         for tunnel in tunnels {
             match tunnel.protocol.as_str() {
                 "http" => {
@@ -45,7 +46,7 @@ impl FRPConfigGenerator {
                          local_port = {}\n\
                          subdomain = {}\n\
                          \n",
-                        tunnel.id,
+                        tunnel.subdomain,
                         tunnel.local_port,
                         tunnel.subdomain
                     ));
@@ -57,7 +58,7 @@ impl FRPConfigGenerator {
                          local_port = {}\n\
                          subdomain = {}\n\
                          \n",
-                        tunnel.id,
+                        tunnel.subdomain,
                         tunnel.local_port,
                         tunnel.subdomain
                     ));
@@ -69,7 +70,7 @@ impl FRPConfigGenerator {
                          local_port = {}\n\
                          remote_port = {}\n\
                          \n",
-                        tunnel.id,
+                        tunnel.subdomain,
                         tunnel.local_port,
                         tunnel.local_port // Use same port remotely
                     ));

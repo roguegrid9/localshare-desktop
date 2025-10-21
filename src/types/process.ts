@@ -66,6 +66,8 @@ export interface DetectedProcess {
   working_dir: string;    // Working directory
   port: number;          // Listening port
   executable_path: string; // Executable path
+  service_type?: string;  // "http", "minecraft", "tcp", etc. (auto-detected)
+  protocol?: string;      // "https", "tcp", "minecraft", etc. (auto-detected)
 }
 
 export type ScanScope = 

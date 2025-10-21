@@ -85,18 +85,49 @@ impl FRPClient {
         let frp_process = FRPProcess::new(self.frpc_path.clone(), config_path);
 
         // Start process
-        frp_process.start()?;
+        let result = frp_process.start();
+
+        if let Err(e) = result {
+            // Log tunnel error (without user_id since this is sync context)
+            if let Some(logger) = crate::LOGGER.as_ref() {
+                for tunnel in &tunnels {
+                    logger.log_tunnel_error(
+                        None, // user_id not available in sync context
+                        tunnel.subdomain.clone(),
+                        "start_error",
+                        e.clone(),
+                    );
+                }
+            }
+            return Err(e);
+        }
 
         // Store process and start time
         *self.process.lock().unwrap() = Some(frp_process);
         *self.started_at.lock().unwrap() = Some(std::time::Instant::now());
+
+        // Note: Tunnel creation logging is done in the async command layer where user context is available
+        log::info!("FRP tunnel(s) started successfully");
 
         Ok(())
     }
 
     pub fn disconnect(&mut self) -> Result<(), String> {
         if let Some(process) = self.process.lock().unwrap().as_ref() {
-            process.stop()?;
+            let result = process.stop();
+
+            if let Err(e) = result {
+                // Log tunnel disconnection error (without user_id since this is sync context)
+                if let Some(logger) = crate::LOGGER.as_ref() {
+                    logger.log_tunnel_error(
+                        None, // user_id not available in sync context
+                        "unknown".to_string(),
+                        "stop_error",
+                        e.clone(),
+                    );
+                }
+                return Err(e);
+            }
         }
 
         *self.process.lock().unwrap() = None;

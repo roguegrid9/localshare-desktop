@@ -1352,3 +1352,158 @@ pub struct ReportNATStatusRequest {
     pub connection_quality: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_state_default() {
+        let state = UserState::default();
+        assert!(!state.is_authenticated);
+        assert!(!state.is_provisional);
+        assert_eq!(state.connection_status, "disconnected");
+        assert!(state.user_id.is_none());
+        assert!(state.username.is_none());
+    }
+
+    #[test]
+    fn test_session_state_variants() {
+        assert_eq!(SessionState::Idle, SessionState::Idle);
+        assert_ne!(SessionState::Idle, SessionState::Connected);
+        assert_eq!(SessionState::Failed, SessionState::Failed);
+    }
+
+    #[test]
+    fn test_resource_type_serialization() {
+        let rt = ResourceType::Process;
+        let serialized = serde_json::to_string(&rt).unwrap();
+        assert_eq!(serialized, "\"process\"");
+
+        let rt2 = ResourceType::GridInvite;
+        let serialized2 = serde_json::to_string(&rt2).unwrap();
+        assert_eq!(serialized2, "\"grid_invite\"");
+    }
+
+    #[test]
+    fn test_resource_type_deserialization() {
+        let json = "\"process\"";
+        let rt: ResourceType = serde_json::from_str(json).unwrap();
+        assert_eq!(rt, ResourceType::Process);
+
+        let json2 = "\"channel_voice\"";
+        let rt2: ResourceType = serde_json::from_str(json2).unwrap();
+        assert_eq!(rt2, ResourceType::ChannelVoice);
+    }
+
+    #[test]
+    fn test_token_request_serialization() {
+        let req = TokenRequest {
+            user_handle: "testuser".to_string(),
+            display_name: "Test User".to_string(),
+            account_type: Some("guest".to_string()),
+        };
+
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["user_handle"], "testuser");
+        assert_eq!(json["display_name"], "Test User");
+        assert_eq!(json["account_type"], "guest");
+    }
+
+    #[test]
+    fn test_token_response_deserialization() {
+        let json = r#"{
+            "token": "abc123",
+            "user_id": "user-456",
+            "expires_in": 3600
+        }"#;
+
+        let resp: TokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.token, "abc123");
+        assert_eq!(resp.user_id, "user-456");
+        assert_eq!(resp.expires_in, 3600);
+    }
+
+    #[test]
+    fn test_relay_mode_as_str() {
+        assert_eq!(RelayMode::P2pFirst.as_str(), "p2p_first");
+        assert_eq!(RelayMode::RelayOnly.as_str(), "relay_only");
+        assert_eq!(RelayMode::P2pOnly.as_str(), "p2p_only");
+    }
+
+    #[test]
+    fn test_relay_mode_serialization() {
+        let mode = RelayMode::P2pFirst;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"p2p_first\"");
+    }
+
+    #[test]
+    fn test_messaging_state_default() {
+        let state = MessagingState::default();
+        assert!(state.channels.is_empty());
+        assert!(state.messages.is_empty());
+        assert!(!state.websocket_connected);
+    }
+
+    #[test]
+    fn test_code_state_default() {
+        let state = CodeState::default();
+        assert!(state.grid_codes.is_empty());
+        assert!(state.my_codes.is_empty());
+        assert!(state.usage_history.is_empty());
+    }
+
+    #[test]
+    fn test_channel_info_default() {
+        let mut channel = ChannelInfo::default();
+        channel.id = "ch-123".to_string();
+        channel.grid_id = "grid-456".to_string();
+        channel.name = "general".to_string();
+
+        assert_eq!(channel.id, "ch-123");
+        assert_eq!(channel.channel_type, "");
+        assert_eq!(channel.member_count, 0);
+    }
+
+    #[test]
+    fn test_websocket_message_serialization() {
+        let msg = WebSocketMessage {
+            r#type: "session_invite".to_string(),
+            payload: serde_json::json!({"from": "user123"}),
+        };
+
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "session_invite");
+        assert_eq!(json["payload"]["from"], "user123");
+    }
+
+    #[test]
+    fn test_grid_serialization_round_trip() {
+        let grid = Grid {
+            id: "grid-1".to_string(),
+            name: "Test Grid".to_string(),
+            description: Some("A test grid".to_string()),
+            creator_id: "user-1".to_string(),
+            grid_type: Some("dev".to_string()),
+            max_members: 10,
+            member_count: 3,
+            user_role: "owner".to_string(),
+            is_public: false,
+            invite_code: Some("INVITE123".to_string()),
+            created_at: "2024-01-01".to_string(),
+            updated_at: "2024-01-02".to_string(),
+        };
+
+        // Serialize
+        let json = serde_json::to_string(&grid).unwrap();
+
+        // Deserialize
+        let grid2: Grid = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(grid.id, grid2.id);
+        assert_eq!(grid.name, grid2.name);
+        assert_eq!(grid.description, grid2.description);
+        assert_eq!(grid.max_members, grid2.max_members);
+    }
+}
+

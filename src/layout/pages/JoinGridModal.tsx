@@ -158,6 +158,13 @@ export default function JoinGridModal({ open, onClose, onSuccess }: JoinGridModa
                 <p className="text-xs text-center text-muted-foreground">
                   Get invite codes from grid owners or members
                 </p>
+
+                {/* P2P Info Message */}
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
+                  <p className="text-xs text-blue-200">
+                    <strong>ℹ️ P2P Connection:</strong> Both you and other members must have RogueGrid9 installed for direct peer-to-peer connections to work.
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2">

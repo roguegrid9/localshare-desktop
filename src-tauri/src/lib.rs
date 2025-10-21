@@ -15,6 +15,8 @@ mod websocket;
 mod codes;
 mod share;
 mod frp;
+mod logging;
+pub mod tunnel_names;
 use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 pub mod messaging;
@@ -99,6 +101,23 @@ pub use state::app::AppState;
 use commands::relay::FRPState;
 use api::CoordinatorClient;
 use std::sync::Mutex;
+use lazy_static::lazy_static;
+
+// Global logger instance for analytics
+lazy_static! {
+    pub static ref LOGGER: Option<logging::Logger> = {
+        match logging::Logger::new() {
+            Ok(logger) => {
+                log::info!("Analytics logger initialized successfully");
+                Some(logger)
+            }
+            Err(e) => {
+                log::warn!("Failed to initialize analytics logger: {} (analytics will be disabled)", e);
+                None
+            }
+        }
+    };
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -194,26 +213,29 @@ pub fn run() {
                 let state = app_handle.state::<AppState>();
                 
                 async fn initialize_all_services(
-                    app_handle: tauri::AppHandle, 
+                    app_handle: tauri::AppHandle,
                     state: tauri::State<'_, AppState>
                 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-                    // 1. Initialize grids service first
+                    // Note: Tunnel cleanup moved to post-authentication in auth commands
+                    // Can't clean up tunnels here because user isn't authenticated yet
+
+                    // 2. Initialize grids service
                     if let Err(e) = initialize_grids_service(app_handle.clone(), state.clone()).await {
                         log::error!("Failed to initialize grids service: {}", e);
                     }
-                    
+
                     if let Err(e) = initialize_terminal_manager(app_handle.clone(), state.clone()).await {
                         log::error!("Failed to initialize terminal manager: {}", e);
                     }
                     
-                    // 2. Initialize process manager
+                    // 3. Initialize process manager
                     if let Err(e) = initialize_process_manager(app_handle.clone(), state.clone()).await {
                         log::error!("Failed to initialize process manager: {}", e);
                     }
-                    
-                    // 3. Discovery system no longer needs initialization (simplified)
-                    
-                    // 4. Setup terminal recovery listener
+
+                    // 4. Discovery system no longer needs initialization (simplified)
+
+                    // 5. Setup terminal recovery listener
                     {
                         let process_manager_guard = state.process_manager.lock().await;
                         if let Some(ref manager) = *process_manager_guard {
@@ -247,6 +269,31 @@ pub fn run() {
                     }
                     if let Err(e) = initialize_media_manager(app_handle.clone(), state.clone()).await {
                         log::error!("Failed to initialize media manager: {}", e);
+                    }
+
+                    // Auto-connect FRP relay if authenticated
+                    let token_opt = {
+                        let auth_token_guard = state.auth_token.lock().await;
+                        auth_token_guard.clone()
+                    };
+
+                    if let Some(token) = token_opt {
+                        log::info!("🔌 Auto-connecting to FRP relay...");
+                        let frp_state = app_handle.state::<FRPState>();
+                        let api_client = app_handle.state::<CoordinatorClient>();
+
+                        if let Err(e) = crate::commands::relay::connect_frp_relay(
+                            app_handle.clone(),
+                            frp_state,
+                            api_client,
+                            token.clone()
+                        ).await {
+                            log::warn!("Failed to auto-connect FRP relay: {}", e);
+                        } else {
+                            log::info!("✅ FRP relay auto-connected successfully");
+                        }
+                    } else {
+                        log::info!("No auth token available, skipping FRP auto-connect");
                     }
 
                     // Resume heartbeats - MOVED to frontend call after authentication
@@ -288,6 +335,7 @@ pub fn run() {
             promote_account_with_username,
             get_auth_token,
             start_oauth_server,
+            cleanup_stale_tunnels,
 
             // ============================================================================
             // UPDATER COMMANDS
@@ -608,6 +656,36 @@ pub fn run() {
             check_tunnel_subdomain_availability,
 
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Clean up tunnels and FRP connection when app is closing
+                let app_handle = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Get user session and API client
+                    if let Ok(Some(session)) = crate::auth::storage::get_user_session().await {
+                        let api_client = app_handle.state::<CoordinatorClient>();
+
+                        // Delete all tunnels
+                        match api_client.delete_all_tunnels(&session.token).await {
+                            Ok(count) if count > 0 => log::info!("Cleaned up {} tunnel(s) on shutdown", count),
+                            Ok(_) => log::info!("No tunnels to clean up on shutdown"),
+                            Err(e) => log::warn!("Failed to clean up tunnels on shutdown: {}", e),
+                        }
+                    }
+
+                    // Disconnect FRP relay
+                    let frp_state = app_handle.state::<commands::relay::FRPState>();
+                    let mut frp_guard = frp_state.client.lock().unwrap();
+                    if let Some(frp) = frp_guard.as_mut() {
+                        if let Err(e) = frp.disconnect() {
+                            log::warn!("Failed to disconnect FRP on shutdown: {}", e);
+                        } else {
+                            log::info!("FRP client disconnected on shutdown");
+                        }
+                    }
+                });
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

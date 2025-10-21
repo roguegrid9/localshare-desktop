@@ -219,3 +219,118 @@ pub fn generate_command_templates() -> Vec<CommandTemplate> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_port_from_command_with_port_flag() {
+        assert_eq!(detect_port_from_command("npm run dev --port 3000"), Some(3000));
+        assert_eq!(detect_port_from_command("server -p 8080"), Some(8080));
+        assert_eq!(detect_port_from_command("python -m http.server 8000"), Some(8000));
+    }
+
+    #[test]
+    fn test_detect_port_from_command_with_port_option() {
+        assert_eq!(detect_port_from_command("run server port=5000"), Some(5000));
+        assert_eq!(detect_port_from_command("server --listen 9000"), Some(9000));
+    }
+
+    #[test]
+    fn test_detect_port_from_command_with_colon() {
+        assert_eq!(detect_port_from_command("server :3000"), Some(3000));
+        assert_eq!(detect_port_from_command("localhost:8080"), Some(8080));
+    }
+
+    #[test]
+    fn test_detect_port_from_command_no_port() {
+        assert_eq!(detect_port_from_command("npm install"), None);
+        assert_eq!(detect_port_from_command("ls -la"), None);
+        assert_eq!(detect_port_from_command("echo hello"), None);
+    }
+
+    #[test]
+    fn test_detect_port_from_command_invalid_port() {
+        // Port out of range
+        assert_eq!(detect_port_from_command("server --port 99999"), None);
+        assert_eq!(detect_port_from_command("server --port 0"), None);
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_http_server() {
+        let suggestion = generate_command_suggestion("python -m http.server 8000", Some(8000));
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("HTTP file server"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_npm_dev() {
+        let suggestion = generate_command_suggestion("npm run dev", None);
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Development server"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_minecraft() {
+        let suggestion = generate_command_suggestion("java -jar server.jar nogui", None);
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Minecraft"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_django() {
+        let suggestion = generate_command_suggestion("python manage.py runserver 8000", Some(8000));
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Django"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_flask() {
+        let suggestion = generate_command_suggestion("flask run", None);
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Flask"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_generic_port() {
+        let suggestion = generate_command_suggestion("some-server --port 5000", Some(5000));
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Network service"));
+    }
+
+    #[test]
+    fn test_generate_command_suggestion_no_match() {
+        let suggestion = generate_command_suggestion("ls -la", None);
+        assert!(suggestion.is_none());
+    }
+
+    #[test]
+    fn test_generate_command_templates_has_entries() {
+        let templates = generate_command_templates();
+        assert!(!templates.is_empty());
+        assert!(templates.len() >= 4);
+    }
+
+    #[test]
+    fn test_generate_command_templates_has_http_server() {
+        let templates = generate_command_templates();
+        let http_server = templates.iter().find(|t| t.name == "HTTP File Server");
+        assert!(http_server.is_some());
+
+        let http = http_server.unwrap();
+        assert_eq!(http.default_port, Some(8000));
+        assert_eq!(http.category, "web");
+    }
+
+    #[test]
+    fn test_generate_command_templates_has_nodejs() {
+        let templates = generate_command_templates();
+        let nodejs = templates.iter().find(|t| t.name == "Node.js Dev Server");
+        assert!(nodejs.is_some());
+
+        let node = nodejs.unwrap();
+        assert_eq!(node.default_port, Some(3000));
+        assert_eq!(node.category, "development");
+    }
+}

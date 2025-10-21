@@ -64,3 +64,8 @@ shell-words = "1.1"
 webrtc = "0.9"
 interceptor = "0.10"
 bytes = "1.5"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"
+tempfile = "3.0"

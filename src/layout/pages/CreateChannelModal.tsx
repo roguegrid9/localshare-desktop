@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { X, Hash, Volume2, MessageCircle } from 'lucide-react';
+import { Hash, Volume2, MessageCircle } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Switch } from '../../components/ui/switch';
+import { Card, CardContent } from '../../components/ui/card';
+import { cn } from '../../lib/utils';
 import { useChannels } from '../../hooks/useChannels';
 import type { CreateChannelRequest, CreateVoiceChannelRequest } from '../../types/messaging';
 
@@ -11,10 +25,6 @@ type CreateChannelModalProps = {
   onSuccess: (channelData: { name: string; type: ChannelType; description?: string }) => void;
   gridId: string;
 };
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
 
 // Fun random name generators (keeping your existing ones)
 const randomNameLists = {
@@ -212,45 +222,25 @@ export default function CreateChannelModal({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-md mx-4">
-        <div className="rounded-xl border border-white/10 bg-[#111319] p-6 shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Create Channel</h2>
-                <p className="text-sm text-white/60">Add a new channel to your grid</p>
-              </div>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md p-0">
+        <DialogHeader className="p-6 pb-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg border border-border bg-bg-muted flex items-center justify-center">
+              <MessageCircle className="w-5 h-5 text-text-primary" />
             </div>
-            <button
-              onClick={handleClose}
-              disabled={loading}
-              className="rounded-lg p-1 text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-50"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div>
+              <DialogTitle className="text-xl">Create Channel</DialogTitle>
+              <DialogDescription>Add a new channel to your grid</DialogDescription>
+            </div>
           </div>
+        </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6 p-6 pt-4">
             {/* Channel Type Selection */}
             <div>
-              <label className="block text-sm font-medium text-white mb-3">
-                Channel Type
-              </label>
+              <Label className="mb-3">Channel Type</Label>
               <div className="grid grid-cols-1 gap-2">
                 {channelTypes.map((type) => {
                   const Icon = type.icon;
@@ -259,14 +249,14 @@ export default function CreateChannelModal({
                       key={type.id}
                       type="button"
                       onClick={() => setChannelType(type.id)}
-                      className={cx(
+                      className={cn(
                         "flex items-center gap-3 p-3 rounded-lg border transition-all text-left",
                         channelType === type.id
-                          ? "border-[#FF8A00] bg-[#FF8A00]/10"
-                          : "border-white/10 bg-white/5 hover:bg-white/10"
+                          ? "border-accent-solid bg-accent-solid/10"
+                          : "border-border bg-bg-muted hover:bg-bg-hover"
                       )}
                     >
-                      <div className={cx(
+                      <div className={cn(
                         "w-8 h-8 rounded-lg flex items-center justify-center",
                         type.color
                       )}>
@@ -274,10 +264,10 @@ export default function CreateChannelModal({
                       </div>
                       <div className="flex-1">
                         <div className="font-medium">{type.name}</div>
-                        <div className="text-xs text-white/60">{type.description}</div>
+                        <div className="text-xs text-text-secondary">{type.description}</div>
                       </div>
                       {channelType === type.id && (
-                        <div className="w-2 h-2 rounded-full bg-[#FF8A00]" />
+                        <div className="w-2 h-2 rounded-full bg-accent-solid" />
                       )}
                     </button>
                   );
@@ -287,62 +277,68 @@ export default function CreateChannelModal({
 
             {/* Voice Settings (only shown for voice channels) */}
             {channelType === 'voice' && (
-              <div className="bg-white/5 rounded-lg p-4 space-y-3">
-                <h3 className="text-sm font-medium text-white">Voice Settings</h3>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm text-white/80">Noise Suppression</span>
-                    <input
-                      type="checkbox"
-                      checked={voiceSettings.noiseSuppression}
-                      onChange={(e) => setVoiceSettings(prev => ({ ...prev, noiseSuppression: e.target.checked }))}
-                      className="rounded"
-                    />
-                  </label>
-                  
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm text-white/80">Echo Cancellation</span>
-                    <input
-                      type="checkbox"
-                      checked={voiceSettings.echoCancellation}
-                      onChange={(e) => setVoiceSettings(prev => ({ ...prev, echoCancellation: e.target.checked }))}
-                      className="rounded"
-                    />
-                  </label>
-                  
-                  <label className="flex items-center justify-between">
-                    <span className="text-sm text-white/80">Auto Gain Control</span>
-                    <input
-                      type="checkbox"
-                      checked={voiceSettings.autoGainControl}
-                      onChange={(e) => setVoiceSettings(prev => ({ ...prev, autoGainControl: e.target.checked }))}
-                      className="rounded"
-                    />
-                  </label>
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <h3 className="text-sm font-medium">Voice Settings</h3>
 
-                  <div>
-                    <label className="block text-sm text-white/80 mb-2">Default Quality</label>
-                    <select
-                      value={voiceSettings.defaultQuality}
-                      onChange={(e) => setVoiceSettings(prev => ({ ...prev, defaultQuality: e.target.value as 'low' | 'medium' | 'high' }))}
-                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white"
-                    >
-                      <option value="low">Low (16kHz)</option>
-                      <option value="medium">Medium (44kHz)</option>
-                      <option value="high">High (48kHz)</option>
-                    </select>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="noise-suppression" className="text-sm cursor-pointer">
+                        Noise Suppression
+                      </Label>
+                      <Switch
+                        id="noise-suppression"
+                        checked={voiceSettings.noiseSuppression}
+                        onCheckedChange={(checked) => setVoiceSettings(prev => ({ ...prev, noiseSuppression: checked }))}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="echo-cancellation" className="text-sm cursor-pointer">
+                        Echo Cancellation
+                      </Label>
+                      <Switch
+                        id="echo-cancellation"
+                        checked={voiceSettings.echoCancellation}
+                        onCheckedChange={(checked) => setVoiceSettings(prev => ({ ...prev, echoCancellation: checked }))}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="auto-gain" className="text-sm cursor-pointer">
+                        Auto Gain Control
+                      </Label>
+                      <Switch
+                        id="auto-gain"
+                        checked={voiceSettings.autoGainControl}
+                        onCheckedChange={(checked) => setVoiceSettings(prev => ({ ...prev, autoGainControl: checked }))}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="quality" className="text-sm mb-2">Default Quality</Label>
+                      <select
+                        id="quality"
+                        value={voiceSettings.defaultQuality}
+                        onChange={(e) => setVoiceSettings(prev => ({ ...prev, defaultQuality: e.target.value as 'low' | 'medium' | 'high' }))}
+                        className="w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-text-primary text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-solid focus-visible:ring-offset-2"
+                      >
+                        <option value="low">Low (16kHz)</option>
+                        <option value="medium">Medium (44kHz)</option>
+                        <option value="high">High (48kHz)</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* Channel Name */}
             <div>
-              <label htmlFor="channelName" className="block text-sm font-medium text-white mb-2">
+              <Label htmlFor="channelName" className="mb-2">
                 Channel Name
-              </label>
-              <input
+              </Label>
+              <Input
                 id="channelName"
                 type="text"
                 value={channelName}
@@ -351,16 +347,15 @@ export default function CreateChannelModal({
                   if (error) setError(null);
                 }}
                 placeholder="Leave empty for random name, or enter custom name"
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-[#FF8A00] focus:outline-none focus:ring-1 focus:ring-[#FF8A00]"
                 maxLength={50}
                 disabled={loading}
                 autoFocus
               />
               <div className="flex justify-between mt-1">
-                <span className="text-xs text-white/40">
+                <span className="text-xs text-text-tertiary">
                   {channelName.trim() ? 'Letters, numbers, spaces, hyphens, and underscores only' : 'Will generate a fun random name if left empty'}
                 </span>
-                <span className="text-xs text-white/40">
+                <span className="text-xs text-text-tertiary">
                   {channelName.length}/50
                 </span>
               </div>
@@ -368,21 +363,21 @@ export default function CreateChannelModal({
 
             {/* Description (Optional) */}
             <div>
-              <label htmlFor="description" className="block text-sm font-medium text-white mb-2">
-                Description <span className="text-white/60 font-normal">(optional)</span>
-              </label>
+              <Label htmlFor="description" className="mb-2">
+                Description <span className="text-text-secondary font-normal">(optional)</span>
+              </Label>
               <textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What's this channel for?"
                 rows={3}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-white/40 focus:border-[#FF8A00] focus:outline-none focus:ring-1 focus:ring-[#FF8A00] resize-none"
+                className="flex w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-solid focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-disabled resize-none"
                 maxLength={200}
                 disabled={loading}
               />
               <div className="flex justify-end mt-1">
-                <span className="text-xs text-white/40">
+                <span className="text-xs text-text-tertiary">
                   {description.length}/200
                 </span>
               </div>
@@ -390,32 +385,31 @@ export default function CreateChannelModal({
 
             {/* Error Message */}
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-                <p className="text-sm text-red-400">{error}</p>
+              <div className="rounded-md border border-error/20 bg-error/10 p-3">
+                <p className="text-sm text-error">{error}</p>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 pt-4">
-              <button
+            <DialogFooter className="pt-4">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={handleClose}
                 disabled={loading}
-                className="flex-1 rounded-lg border border-white/20 bg-transparent px-4 py-2 font-medium text-white hover:bg-white/5 disabled:opacity-50 transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
+                variant="default"
                 disabled={loading}
-                className="flex-1 rounded-lg bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] px-4 py-2 font-medium text-white hover:from-[#FF8A00]/90 hover:to-[#FF3D00]/90 disabled:opacity-50 transition-all"
               >
                 {loading ? 'Creating...' : `Create ${channelType === 'voice' ? 'Voice' : 'Text'} Channel`}
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

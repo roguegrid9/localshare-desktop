@@ -1,16 +1,25 @@
 import { useState, useEffect } from 'react';
-import { X, Settings, CheckCircle, AlertCircle, Info, FileText, Search, Radio, Rocket, Lock, Monitor, Cloud, HelpCircle } from 'lucide-react';
+import { Settings, CheckCircle, AlertCircle, FileText, Search, Radio, Rocket, Lock, Monitor, Cloud, HelpCircle } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import type { 
-  ProcessConfigModalProps, 
-  SimpleProcessConfig, 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { cn } from '../../lib/utils';
+import type {
+  ProcessConfigModalProps,
+  SimpleProcessConfig,
   DetectedProcess,
-  ValidationError 
+  ValidationError
 } from '../../types/process';
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(' ');
-}
+import { detectProtocol } from '../../utils/protocolDetection';
 
 // Generate default name based on detected process
 function generateDefaultName(detected: DetectedProcess): string {
@@ -97,7 +106,7 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-medium text-white/80">{title}</h3>
+      <h3 className="text-sm font-medium text-text-primary">{title}</h3>
       {children}
     </div>
   );
@@ -110,9 +119,9 @@ interface InfoItemProps {
 
 function InfoItem({ label, value }: InfoItemProps) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-white/5">
-      <span className="text-sm text-white/60">{label}</span>
-      <span className="text-sm text-white font-mono">{value}</span>
+    <div className="flex justify-between items-center py-2 border-b border-border">
+      <span className="text-sm text-text-secondary">{label}</span>
+      <span className="text-sm text-text-primary font-mono">{value}</span>
     </div>
   );
 }
@@ -125,12 +134,12 @@ interface InfoBoxProps {
 function InfoBox({ variant, children }: InfoBoxProps) {
   const baseClasses = "p-3 rounded-lg border text-sm";
   const variantClasses = {
-    success: "bg-green-500/10 border-green-500/20 text-green-400",
-    info: "bg-blue-500/10 border-blue-500/20 text-blue-400"
+    success: "bg-success/10 border-success/20 text-success",
+    info: "bg-info/10 border-info/20 text-info"
   };
-  
+
   return (
-    <div className={cx(baseClasses, variantClasses[variant])}>
+    <div className={cn(baseClasses, variantClasses[variant])}>
       {children}
     </div>
   );
@@ -138,7 +147,7 @@ function InfoBox({ variant, children }: InfoBoxProps) {
 
 function ComingSoonBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="p-4 rounded-lg border border-white/10 bg-white/5 space-y-3">
+    <div className="p-4 rounded-lg border border-border bg-bg-muted space-y-3">
       {children}
     </div>
   );
@@ -146,7 +155,7 @@ function ComingSoonBox({ children }: { children: React.ReactNode }) {
 
 function ComingSoonItem({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-sm text-white/60 flex items-center gap-2">
+    <div className="text-sm text-text-secondary flex items-center gap-2">
       {children}
     </div>
   );
@@ -160,7 +169,7 @@ function LearnMoreLink({ href, children }: { href: string; children: React.React
         // TODO: Implement proper link handling for Tauri
         console.log('Navigate to:', href);
       }}
-      className="text-sm text-orange-400 hover:text-orange-300 transition-colors inline-flex items-center gap-1"
+      className="text-sm text-accent-solid hover:opacity-hover transition-colors inline-flex items-center gap-1"
     >
       {children}
       <HelpCircle className="w-3 h-3" />
@@ -168,13 +177,20 @@ function LearnMoreLink({ href, children }: { href: string; children: React.React
   );
 }
 
-export default function ProcessConfigModal({ 
-  detectedProcess, 
-  gridId, 
-  onSuccess, 
-  onCancel 
+export default function ProcessConfigModal({
+  detectedProcess,
+  gridId,
+  onSuccess,
+  onCancel
 }: ProcessConfigModalProps) {
-  
+
+  // Auto-detect protocol based on port and process information
+  const detectedProtocolInfo = detectProtocol(
+    detectedProcess.port,
+    detectedProcess.name,
+    detectedProcess.command
+  );
+
   const [config, setConfig] = useState<SimpleProcessConfig>({
     name: generateDefaultName(detectedProcess),
     description: '',
@@ -184,6 +200,8 @@ export default function ProcessConfigModal({
     working_dir: detectedProcess.working_dir,
     executable_path: detectedProcess.executable_path,
     process_name: detectedProcess.name,
+    service_type: detectedProcess.service_type || detectedProtocolInfo.service_type,
+    protocol: detectedProcess.protocol || detectedProtocolInfo.protocol,
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -245,46 +263,30 @@ export default function ProcessConfigModal({
   };
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onCancel}
-      />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-2xl mx-4">
-        <div className="rounded-xl border border-white/10 bg-[#111319] shadow-2xl max-h-[90vh] overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] flex items-center justify-center">
-                <Settings className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-white">Configure Process</h2>
-                <p className="text-sm text-white/60">Set up sharing for your process</p>
-              </div>
+    <Dialog open={true} onOpenChange={onCancel}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
+        <DialogHeader className="p-6 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg border border-border bg-bg-muted flex items-center justify-center">
+              <Settings className="w-5 h-5 text-text-primary" />
             </div>
-            <button
-              onClick={onCancel}
-              className="rounded-lg p-1 text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div>
+              <DialogTitle className="text-xl">Configure Process</DialogTitle>
+              <DialogDescription>Set up sharing for your process</DialogDescription>
+            </div>
           </div>
+        </DialogHeader>
 
-          {/* Content */}
-          <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-120px)]">
+        <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-120px)]">
             <div className="p-6 space-y-6">
               {/* Process Information Section */}
               <Section title={<div className="flex items-center gap-2"><FileText className="w-4 h-4" />Process Information</div>}>
                 <div className="space-y-4">
                   <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-white/80 mb-2">
-                      Process Name <span className="text-red-400">*</span>
-                    </label>
-                    <input
+                    <Label htmlFor="name" className="mb-2">
+                      Process Name <span className="text-error">*</span>
+                    </Label>
+                    <Input
                       id="name"
                       type="text"
                       value={config.name}
@@ -292,36 +294,33 @@ export default function ProcessConfigModal({
                       placeholder="My Process"
                       required
                       autoFocus
-                      className={cx(
-                        "w-full px-3 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-colors",
-                        getFieldError('name') ? "border-red-500/50" : "border-white/10"
-                      )}
+                      className={cn(getFieldError('name') && "border-error")}
                     />
                     {getFieldError('name') && (
-                      <p className="mt-1 text-sm text-red-400 flex items-center gap-1">
+                      <p className="mt-1 text-sm text-error flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
                         {getFieldError('name')}
                       </p>
                     )}
                   </div>
-                  
+
                   <div>
-                    <label htmlFor="description" className="block text-sm font-medium text-white/80 mb-2">
+                    <Label htmlFor="description" className="mb-2">
                       Description (optional)
-                    </label>
+                    </Label>
                     <textarea
                       id="description"
                       value={config.description}
                       onChange={(e) => setConfig({ ...config, description: e.target.value })}
                       placeholder="Describe what this process does..."
                       rows={3}
-                      className={cx(
-                        "w-full px-3 py-2 bg-white/5 border rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-colors resize-none",
-                        getFieldError('description') ? "border-red-500/50" : "border-white/10"
+                      className={cn(
+                        "flex w-full rounded-md border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-solid focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-disabled resize-none",
+                        getFieldError('description') && "border-error"
                       )}
                     />
                     {getFieldError('description') && (
-                      <p className="mt-1 text-sm text-red-400 flex items-center gap-1">
+                      <p className="mt-1 text-sm text-error flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
                         {getFieldError('description')}
                       </p>
@@ -332,7 +331,7 @@ export default function ProcessConfigModal({
               
               {/* Detected Information Section */}
               <Section title={<div className="flex items-center gap-2"><Search className="w-4 h-4" />Detected Information</div>}>
-                <div className="bg-white/5 rounded-lg p-4 space-y-1">
+                <div className="bg-bg-muted rounded-lg p-4 space-y-1">
                   <InfoItem label="Process" value={config.process_name} />
                   <InfoItem label="Port" value={config.port} />
                   <InfoItem label="PID" value={config.pid} />
@@ -369,47 +368,47 @@ export default function ProcessConfigModal({
 
               {/* Error and Success Messages */}
               {submitError && (
-                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                  <AlertCircle className="w-4 h-4 text-red-400" />
-                  <span className="text-red-300 text-sm flex-1">{submitError}</span>
-                  <button
+                <div className="flex items-center gap-2 p-3 bg-error/10 border border-error/20 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-error" />
+                  <span className="text-error text-sm flex-1">{submitError}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setSubmitError(null)}
-                    className="text-red-400 hover:text-red-300 transition-colors"
+                    className="h-6 w-6 text-error hover:text-error"
                   >
-                    <X className="w-4 h-4" />
-                  </button>
+                    <AlertCircle className="w-4 h-4" />
+                  </Button>
                 </div>
               )}
 
               {submitSuccess && (
-                <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-green-300 text-sm">Process shared successfully!</span>
+                <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-lg">
+                  <CheckCircle className="w-4 h-4 text-success" />
+                  <span className="text-success text-sm">Process shared successfully!</span>
                 </div>
               )}
             </div>
-            
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-white/10 bg-white/5">
-              <button
+
+            <DialogFooter className="p-6 border-t border-border">
+              <Button
                 type="button"
+                variant="outline"
                 onClick={onCancel}
                 disabled={isSubmitting}
-                className="px-4 py-2 text-white/60 hover:text-white transition-colors disabled:opacity-50"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
+                variant="default"
                 disabled={isSubmitting}
-                className="px-6 py-2 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] text-white font-medium rounded-lg hover:shadow-lg transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Creating...' : 'Share Process'}
-              </button>
-            </div>
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

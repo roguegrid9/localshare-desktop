@@ -95,6 +95,15 @@ impl GridsService {
 
         let response = self.client.create_grid(&token, request).await?;
 
+        // Log workspace created event
+        if let Ok(user_state) = crate::auth::storage::get_user_state().await {
+            if let Some(user_id) = user_state.user_id {
+                if let Some(logger) = crate::LOGGER.as_ref() {
+                    logger.log_workspace_created(user_id, response.grid.id.clone());
+                }
+            }
+        }
+
         // Refresh grids list after creating
         if let Err(e) = self.fetch_grids().await {
             log::warn!("Failed to refresh grids list after creating grid: {}", e);
@@ -184,12 +193,21 @@ impl GridsService {
         };
 
         self.client.invite_to_grid(&token, grid_id.clone(), request).await?;
-        
+
+        // Log invite sent event
+        if let Ok(user_state) = crate::auth::storage::get_user_state().await {
+            if let Some(inviter_user_id) = user_state.user_id {
+                if let Some(logger) = crate::LOGGER.as_ref() {
+                    logger.log_invite_sent(inviter_user_id, grid_id.clone(), "link");
+                }
+            }
+        }
+
         // Refresh grid members after inviting
         if let Err(e) = self.get_grid_details(grid_id.clone()).await {
             log::warn!("Failed to refresh grid members after inviting user: {}", e);
         }
-        
+
         log::info!("Invited user {} to grid {}", user_id, grid_id);
         Ok(())
     }
@@ -205,6 +223,15 @@ impl GridsService {
         };
 
         let grid = self.client.join_grid(&token, request).await?;
+
+        // Log user joined event
+        if let Ok(user_state) = crate::auth::storage::get_user_state().await {
+            if let Some(user_id) = user_state.user_id {
+                if let Some(logger) = crate::LOGGER.as_ref() {
+                    logger.log_user_joined(user_id, grid.id.clone(), "code");
+                }
+            }
+        }
 
         // Refresh grids list after joining
         if let Err(e) = self.fetch_grids().await {
@@ -542,5 +569,197 @@ impl GridsService {
 
         log::info!("Successfully updated grid basic info for: {}", grid_id);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::types::{Grid, GridMember};
+    use std::collections::HashMap;
+
+    // Helper to create test grid member
+    fn create_test_member(user_id: &str, is_online: bool) -> GridMember {
+        GridMember {
+            user_id: user_id.to_string(),
+            username: Some(format!("user_{}", user_id)),
+            display_name: Some(format!("User {}", user_id)),
+            role: "member".to_string(),
+            joined_at: "2024-01-01T00:00:00Z".to_string(),
+            is_online,
+        }
+    }
+
+    // Test helper functions that check grid membership logic
+    fn users_share_grid_in_state(
+        state: &GridsState,
+        user_id_1: &str,
+        user_id_2: &str,
+    ) -> Option<String> {
+        for grid in &state.grids {
+            if let Some(members) = state.grid_members.get(&grid.id) {
+                let has_user_1 = members.iter().any(|m| m.user_id == user_id_1);
+                let has_user_2 = members.iter().any(|m| m.user_id == user_id_2);
+
+                if has_user_1 && has_user_2 {
+                    return Some(grid.id.clone());
+                }
+            }
+        }
+        None
+    }
+
+    fn get_grid_peers_from_state(state: &GridsState, user_id: &str) -> Vec<String> {
+        let mut peers = std::collections::HashSet::new();
+
+        for members in state.grid_members.values() {
+            let user_in_grid = members.iter().any(|m| m.user_id == user_id);
+            if user_in_grid {
+                for member in members {
+                    if member.user_id != user_id {
+                        peers.insert(member.user_id.clone());
+                    }
+                }
+            }
+        }
+
+        peers.into_iter().collect()
+    }
+
+    #[test]
+    fn test_users_share_grid_returns_grid_id_when_both_users_in_same_grid() {
+        // Create test state with 2 grids
+        let mut grid_members = HashMap::new();
+        grid_members.insert(
+            "grid-1".to_string(),
+            vec![
+                create_test_member("user-1", true),
+                create_test_member("user-2", true),
+            ],
+        );
+        grid_members.insert(
+            "grid-2".to_string(),
+            vec![create_test_member("user-3", true)],
+        );
+
+        let state = GridsState {
+            grids: vec![
+                Grid {
+                    id: "grid-1".to_string(),
+                    name: "Test Grid 1".to_string(),
+                    description: None,
+                    creator_id: "user-1".to_string(),
+                    grid_type: None,
+                    max_members: 10,
+                    member_count: 2,
+                    user_role: "owner".to_string(),
+                    is_public: false,
+                    invite_code: Some("code-123".to_string()),
+                    created_at: "2024-01-01T00:00:00Z".to_string(),
+                    updated_at: "2024-01-01T00:00:00Z".to_string(),
+                },
+            ],
+            grid_members,
+            pending_invitations: Vec::new(),
+            last_updated: Some(1000000),
+            websocket_connected: false,
+        };
+
+        // Test: users 1 and 2 share grid-1
+        let result = users_share_grid_in_state(&state, "user-1", "user-2");
+        assert_eq!(result, Some("grid-1".to_string()));
+    }
+
+    #[test]
+    fn test_users_share_grid_returns_none_when_users_not_in_same_grid() {
+        // Create test state with users in different grids
+        let mut grid_members = HashMap::new();
+        grid_members.insert("grid-1".to_string(), vec![create_test_member("user-1", true)]);
+        grid_members.insert("grid-2".to_string(), vec![create_test_member("user-2", true)]);
+
+        let state = GridsState {
+            grids: vec![
+                Grid {
+                    id: "grid-1".to_string(),
+                    name: "Test Grid 1".to_string(),
+                    description: None,
+                    creator_id: "user-1".to_string(),
+                    grid_type: None,
+                    max_members: 10,
+                    member_count: 1,
+                    user_role: "owner".to_string(),
+                    is_public: false,
+                    invite_code: Some("code-123".to_string()),
+                    created_at: "2024-01-01T00:00:00Z".to_string(),
+                    updated_at: "2024-01-01T00:00:00Z".to_string(),
+                },
+            ],
+            grid_members,
+            pending_invitations: Vec::new(),
+            last_updated: Some(1000000),
+            websocket_connected: false,
+        };
+
+        // Test: users 1 and 2 don't share any grids
+        let result = users_share_grid_in_state(&state, "user-1", "user-2");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_grid_peers_returns_all_users_in_shared_grids() {
+        // Create test state
+        let mut grid_members = HashMap::new();
+        grid_members.insert(
+            "grid-1".to_string(),
+            vec![
+                create_test_member("user-1", true),
+                create_test_member("user-2", true),
+                create_test_member("user-3", false),
+            ],
+        );
+
+        let state = GridsState {
+            grids: vec![],
+            grid_members,
+            pending_invitations: Vec::new(),
+            last_updated: Some(1000000),
+            websocket_connected: false,
+        };
+
+        // Test: get peers for user-1
+        let peers = get_grid_peers_from_state(&state, "user-1");
+
+        assert_eq!(peers.len(), 2);
+        assert!(peers.contains(&"user-2".to_string()));
+        assert!(peers.contains(&"user-3".to_string()));
+        assert!(!peers.contains(&"user-1".to_string())); // Should not include self
+    }
+
+    #[test]
+    fn test_grid_member_creation_with_correct_fields() {
+        let member = create_test_member("user-123", true);
+
+        assert_eq!(member.user_id, "user-123");
+        assert_eq!(member.username, Some("user_user-123".to_string()));
+        assert_eq!(member.display_name, Some("User user-123".to_string()));
+        assert_eq!(member.role, "member");
+        assert_eq!(member.is_online, true);
+    }
+
+    #[test]
+    fn test_grids_state_initializes_with_empty_collections() {
+        let state = GridsState {
+            grids: Vec::new(),
+            grid_members: HashMap::new(),
+            pending_invitations: Vec::new(),
+            last_updated: None,
+            websocket_connected: false,
+        };
+
+        assert_eq!(state.grids.len(), 0);
+        assert_eq!(state.grid_members.len(), 0);
+        assert_eq!(state.pending_invitations.len(), 0);
+        assert_eq!(state.last_updated, None);
+        assert_eq!(state.websocket_connected, false);
     }
 }

@@ -459,17 +459,14 @@ impl P2PConnection {
         if let Some(data_channel) = dc_guard.as_ref() {
             let bytes = bytes::Bytes::from(data);
             let data_len = bytes.len() as u64;
-            
+
             data_channel.send(&bytes).await?;
-            
+
             // Track sent bytes
             {
                 let mut sent = self.bytes_sent.lock().await;
                 *sent += data_len;
             }
-
-
-            log::debug!("Sent {} bytes via P2P data channel", data_len);
         } else {
             return Err(anyhow::anyhow!("🔌 Connection lost. The P2P connection is not available. Auto-reconnection will attempt to restore the connection."));
         }
@@ -1041,7 +1038,7 @@ impl P2PConnection {
 
     async fn init_webrtc(&self) -> Result<()> {
         log::info!(
-            "Initializing WebRTC with TURN support for session {}",
+            "🔄 Attempting P2P connection for session {} (will try: Direct P2P → STUN → TURN relay)",
             self.session_id
         );
 
@@ -1111,6 +1108,12 @@ impl P2PConnection {
 
         // Configure ICE servers
         let ice_servers = relay_config.to_webrtc_ice_servers();
+
+        log::info!(
+            "Configured {} STUN servers, {} TURN servers for P2P connection attempt",
+            relay_config.stun_servers.len(),
+            relay_config.turn_servers.len()
+        );
 
         let config = webrtc::peer_connection::configuration::RTCConfiguration {
             ice_servers,
@@ -1276,7 +1279,6 @@ impl P2PConnection {
                         if let Some(msg_type) = json_msg.get("type").and_then(|t| t.as_str()) {
                             match msg_type {
                                 "tcp_data" => {
-                                    log::debug!("Received TCP data over P2P");
                                     // Forward to actual process port if we're the host
                                     if is_host {
                                         if let (Some(connection_id), Some(target_port), Some(data_b64)) = (
@@ -1286,7 +1288,6 @@ impl P2PConnection {
                                         ) {
                                             use base64::{Engine as _, engine::general_purpose};
                                             if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
-                                                log::debug!("Host received {} bytes from client (connection {}) to forward to localhost:{}", tcp_data.len(), connection_id, target_port);
                                                 // Get or create TCP connection to target port
                                                 let connection_key = format!("{}_{}", connection_id, target_port);
 
@@ -1321,7 +1322,6 @@ impl P2PConnection {
                                                                         Ok(n) => {
                                                                             // Send response back over WebRTC
                                                                             let response = &buffer[..n];
-                                                                            log::debug!("Host read {} bytes from server (localhost:{}), sending to client", n, target_port);
                                                                             let response_msg = serde_json::json!({
                                                                                 "type": "tcp_data",
                                                                                 "connection_id": conn_id_for_reading,
@@ -1336,7 +1336,6 @@ impl P2PConnection {
                                                                                 log::error!("Failed to send TCP response over WebRTC: {}", e);
                                                                                 break;
                                                                             }
-                                                                            log::debug!("Host sent {} bytes to client (connection {})", n, conn_id_for_reading);
                                                                         }
                                                                         Err(e) => {
                                                                             log::error!("Failed to read from TCP connection: {}", e);
@@ -1362,8 +1361,6 @@ impl P2PConnection {
                                                         // Remove failed connection
                                                         drop(writer);
                                                         connections.remove(&connection_key);
-                                                    } else {
-                                                        log::debug!("Host forwarded {} bytes to server at localhost:{}", tcp_data.len(), target_port);
                                                     }
                                                 }
                                             }
@@ -1371,7 +1368,6 @@ impl P2PConnection {
                                     }
                                 }
                                 "tcp_close" => {
-                                    log::info!("Received TCP close over P2P");
                                     if is_host {
                                         if let (Some(connection_id), Some(target_port)) = (
                                             json_msg.get("connection_id").and_then(|c| c.as_str()),
@@ -1385,7 +1381,6 @@ impl P2PConnection {
                                     }
                                 }
                                 "terminal_input" => {
-                                    log::info!("Received terminal input over P2P");
                                     // Forward to process stdin if we're the host
                                     if is_host {
                                         if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
@@ -1401,7 +1396,6 @@ impl P2PConnection {
                                     }
                                 }
                                 "terminal_output" => {
-                                    log::info!("Received terminal output over P2P");
                                     // Emit to frontend for terminal UI
                                     if let Err(e) = app_handle.emit(
                                         "p2p_terminal_output",
@@ -1451,12 +1445,6 @@ impl P2PConnection {
             Box::pin(async move {
                 if let Some(candidate) = candidate {
                     let candidate_json = candidate.to_json().unwrap_or_default();
-                    log::info!("Generated ICE candidate for session {}: type={} protocol={} address={}",
-                        session_id,
-                        candidate_json.candidate.split_whitespace().nth(7).unwrap_or("unknown"),
-                        candidate_json.candidate.split_whitespace().nth(2).unwrap_or("unknown"),
-                        candidate_json.candidate.split_whitespace().nth(4).unwrap_or("unknown")
-                    );
 
                     // Detect connection type from candidate for future bandwidth tracking
                     let detected_connection_type = if candidate_json.candidate.contains("relay") {
@@ -1468,6 +1456,25 @@ impl P2PConnection {
                     } else {
                         "unknown"
                     };
+
+                    // Enhanced logging based on connection type
+                    match detected_connection_type {
+                        "direct_p2p" => {
+                            log::info!("✅ P2P: Direct connection candidate generated for session {} (host candidate)", session_id);
+                        }
+                        "stun_assisted" => {
+                            log::info!("✅ P2P: STUN-assisted connection candidate generated for session {} (srflx candidate)", session_id);
+                        }
+                        "turn_relay" => {
+                            log::warn!("⚠️ P2P: TURN relay candidate generated for session {} (relay candidate) - direct P2P may have failed", session_id);
+                        }
+                        _ => {
+                            log::info!("Generated ICE candidate for session {}: type={}",
+                                session_id,
+                                candidate_json.candidate.split_whitespace().nth(7).unwrap_or("unknown")
+                            );
+                        }
+                    }
 
                     // Update the connection type
                     {
@@ -1542,6 +1549,7 @@ impl P2PConnection {
         let grid_id_state = self.grid_id.clone();
         let peer_user_id_state = self.peer_user_id.clone();
         let state = self.state.clone();
+        let connection_type_state = self.connection_type.clone();
         peer_connection.on_peer_connection_state_change(Box::new(
             move |s: RTCPeerConnectionState| {
                 let app_handle = app_handle_state.clone();
@@ -1550,6 +1558,7 @@ impl P2PConnection {
                 let peer_user_id = peer_user_id_state.clone();
                 let state = state.clone();
                 let peer_user_id_for_event = peer_user_id.clone();
+                let connection_type = connection_type_state.clone();
 
                 Box::pin(async move {
                     log::info!(
@@ -1559,11 +1568,34 @@ impl P2PConnection {
                     );
                     let new_state = match s {
                         RTCPeerConnectionState::Connected => {
+                            // Get the final connection type
+                            let final_connection_type = {
+                                let conn_type = connection_type.lock().await;
+                                conn_type.clone()
+                            };
+
+                            // Enhanced logging showing which connection type succeeded
+                            match final_connection_type.as_str() {
+                                "direct_p2p" => {
+                                    log::info!("✅ P2P Connection Type: Direct P2P (no relay servers used)");
+                                }
+                                "stun_assisted" => {
+                                    log::info!("✅ P2P Connection Type: STUN-assisted P2P (minimal relay usage)");
+                                }
+                                "turn_relay" => {
+                                    log::warn!("✅ P2P Connection Type: TURN Relay (using relay server bandwidth)");
+                                }
+                                _ => {
+                                    log::info!("✅ P2P Connection Type: {}", final_connection_type);
+                                }
+                            }
+
                             // Emit connection established event with metadata for bandwidth tracking
                             if let Err(e) =
                                 app_handle.emit("p2p_connection_established", &serde_json::json!({
                                     "session_id": session_id,
                                     "grid_id": grid_id,
+                                    "connection_type": final_connection_type,
                                     "timestamp": chrono::Utc::now().to_rfc3339(),
                                     "ready_for_bandwidth_tracking": true
                                 }))
@@ -1751,7 +1783,6 @@ impl P2PConnection {
                                 {
                                     match msg_type {
                                         "http_request" => {
-                                            log::info!("Received HTTP request over P2P");
                                             // TODO: Forward to local HTTP server
                                         }
                                         "tcp_data" => {
@@ -1759,8 +1790,6 @@ impl P2PConnection {
                                                 if let Some(data_b64) = json_msg.get("data").and_then(|d| d.as_str()) {
                                                     use base64::{Engine as _, engine::general_purpose};
                                                     if let Ok(tcp_data) = general_purpose::STANDARD.decode(data_b64) {
-                                                        log::debug!("Client received {} bytes from server for connection {}", tcp_data.len(), connection_id);
-
                                                         // Forward to local TCP socket
                                                         let transports = active_transports.lock().await;
                                                         let mut wrote_data = false;
@@ -1769,7 +1798,6 @@ impl P2PConnection {
                                                             if let crate::transport::TransportInstance::Tcp(tcp_tunnel) = transport {
                                                                 match tcp_tunnel.write_to_connection(connection_id, &tcp_data).await {
                                                                     Ok(_) => {
-                                                                        log::debug!("Client wrote {} bytes to local client", tcp_data.len());
                                                                         wrote_data = true;
                                                                         break;
                                                                     }
@@ -1788,7 +1816,6 @@ impl P2PConnection {
                                             }
                                         }
                                         "terminal_input" => {
-                                            log::info!("Received terminal input over P2P");
                                             // Forward to process stdin if we're the host
                                             if is_host {
                                                 if let Some(data_b64) =
@@ -1813,7 +1840,6 @@ impl P2PConnection {
                                             }
                                         }
                                         "terminal_output" => {
-                                            log::info!("Received terminal output over P2P");
                                             // Emit to frontend for terminal UI
                                             if let Err(e) =
                                                 app_handle.emit("terminal_output", &json_msg)
@@ -1822,7 +1848,7 @@ impl P2PConnection {
                                             }
                                         }
                                         _ => {
-                                            log::debug!("Unknown P2P message type: {}", msg_type);
+                                            // Unknown message type - silently ignore in production
                                         }
                                     }
                                     return;
@@ -1831,12 +1857,6 @@ impl P2PConnection {
                         }
 
                         // Fallback: treat as raw binary data for process communication
-                        log::debug!(
-                            "Received raw P2P data: {} bytes for grid {}",
-                            msg.data.len(),
-                            grid_id
-                        );
-
                         if is_host {
                             let pm_guard = process_manager.lock().await;
                             if let Some(pm) = pm_guard.as_ref() {

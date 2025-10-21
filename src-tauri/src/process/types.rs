@@ -337,3 +337,63 @@ impl std::fmt::Display for RegistrationState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_process_config_new_creates_config_with_executable_path() {
+        let config = ProcessConfig::new("/usr/bin/node".to_string());
+
+        assert_eq!(config.executable_path, "/usr/bin/node");
+        assert_eq!(config.args.len(), 0);
+        assert_eq!(config.env_vars.len(), 0);
+        assert!(!config.working_directory.is_empty());
+    }
+
+    #[test]
+    fn test_process_config_with_args_adds_arguments() {
+        let config = ProcessConfig::new("/usr/bin/node".to_string())
+            .with_args(vec!["server.js".to_string(), "--port".to_string(), "3000".to_string()]);
+
+        assert_eq!(config.args.len(), 3);
+        assert_eq!(config.args[0], "server.js");
+        assert_eq!(config.args[1], "--port");
+        assert_eq!(config.args[2], "3000");
+    }
+
+    #[test]
+    fn test_process_config_with_env_var_adds_environment_variable() {
+        let config = ProcessConfig::new("/usr/bin/node".to_string())
+            .with_env_var("NODE_ENV".to_string(), "production".to_string())
+            .with_env_var("PORT".to_string(), "8080".to_string());
+
+        assert_eq!(config.env_vars.len(), 2);
+        assert_eq!(config.env_vars.get("NODE_ENV"), Some(&"production".to_string()));
+        assert_eq!(config.env_vars.get("PORT"), Some(&"8080".to_string()));
+    }
+
+    #[test]
+    fn test_process_config_validate_rejects_empty_executable_path() {
+        let config = ProcessConfig::new("".to_string());
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Executable path cannot be empty");
+    }
+
+    #[test]
+    fn test_process_config_validate_accepts_internal_process_types() {
+        let configs = vec![
+            ProcessConfig::new("internal_discovered_process".to_string()),
+            ProcessConfig::new("internal_terminal".to_string()),
+            ProcessConfig::new("internal_port_forward".to_string()),
+        ];
+
+        for config in configs {
+            let result = config.validate();
+            assert!(result.is_ok(), "Internal process type should be valid: {}", config.executable_path);
+        }
+    }
+}

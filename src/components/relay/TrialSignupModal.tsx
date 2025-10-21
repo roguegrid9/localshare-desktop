@@ -43,7 +43,7 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
     const checkSubscription = async () => {
       console.log(`[TrialSignup] Polling attempt ${attempts + 1}/${maxAttempts}`);
       try {
-        const response = await fetch('https://roguegrid9-coordinator.fly.dev/api/v1/relay/subscription', {
+        const response = await fetch('https://api.roguegrid9.com/api/v1/relay/subscription', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -111,8 +111,8 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
     setError(null);
 
     try {
-      // Create Stripe checkout session
-      const response = await fetch('https://roguegrid9-coordinator.fly.dev/api/v1/relay/checkout', {
+      // BETA LAUNCH: Free subscription created instantly on backend
+      const response = await fetch('https://api.roguegrid9.com/api/v1/relay/checkout', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -125,26 +125,15 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to create checkout session');
+        throw new Error(error.message || 'Failed to activate beta access');
       }
 
       const data = await response.json();
 
-      if (data.url) {
-        // Open Stripe checkout in browser
-        console.log('[TrialSignup] Opening Stripe checkout:', data.url);
-        await open(data.url);
-
-        // Start polling for subscription activation
-        console.log('[TrialSignup] Checkout opened, starting polling...');
-        setWaitingForPayment(true);
-        setStarting(false);
-        startPollingForSubscription();
-      } else if (data.message) {
-        // Stripe not configured, subscription created directly
-        onStarted();
-        onClose();
-      }
+      // Beta: subscription created instantly, no payment needed
+      console.log('[TrialSignup] Beta subscription activated:', data);
+      onStarted();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStarting(false);
@@ -165,8 +154,8 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-white/10">
             <div>
-              <h2 className="text-xl font-semibold text-white">Subscribe to Pro</h2>
-              <p className="text-sm text-white/60 mt-1">Get unlimited relay access</p>
+              <h2 className="text-xl font-semibold text-white">Activate Beta Access</h2>
+              <p className="text-sm text-white/60 mt-1">Get 50GB free relay bandwidth</p>
             </div>
             <button
               onClick={onClose}
@@ -186,17 +175,7 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
               </div>
             )}
 
-            {waitingForPayment && (
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start gap-3">
-                <Spinner className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-blue-400 font-medium">Waiting for payment completion...</p>
-                  <p className="text-xs text-blue-400/70 mt-1">
-                    Complete your payment in the browser. This will update automatically.
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* BETA LAUNCH: No payment waiting needed */}
 
             {/* Location Selector */}
             <div className="space-y-3">
@@ -228,16 +207,16 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
               </div>
             </div>
 
-            {/* Payment Notice */}
-            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
+            {/* Beta Notice */}
+            <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
               <div className="flex items-start gap-3">
-                <CreditCard className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm text-blue-300 font-medium mb-1">
-                    Payment processing via Stripe
+                  <p className="text-sm text-green-300 font-medium mb-1">
+                    Free Beta Access
                   </p>
-                  <p className="text-xs text-blue-300/70">
-                    Your subscription will be billed monthly. Cancel anytime from settings.
+                  <p className="text-xs text-green-300/70">
+                    Get 50GB of free relay bandwidth during our beta launch. No payment required!
                   </p>
                 </div>
               </div>
@@ -248,30 +227,25 @@ export function TrialSignupModal({ token, onClose, onStarted }: TrialSignupModal
           <div className="border-t border-white/10 p-6 flex justify-end gap-3">
             <button
               onClick={onClose}
-              disabled={starting || waitingForPayment}
+              disabled={starting}
               className="px-4 py-2 text-white/60 hover:text-white transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleStartSubscription}
-              disabled={starting || waitingForPayment}
+              disabled={starting}
               className="px-6 py-2.5 bg-gradient-to-r from-[#FF8A00] to-[#FF3D00] hover:from-[#FF9A10] hover:to-[#FF4D10] disabled:from-gray-700 disabled:to-gray-700 text-white rounded-lg transition-all flex items-center gap-2 font-medium disabled:opacity-50"
             >
               {starting ? (
                 <>
                   <Spinner className="w-4 h-4" />
-                  <span>Processing...</span>
-                </>
-              ) : waitingForPayment ? (
-                <>
-                  <Spinner className="w-4 h-4" />
-                  <span>Waiting for Payment...</span>
+                  <span>Activating...</span>
                 </>
               ) : (
                 <>
-                  <CreditCard className="w-4 h-4" />
-                  <span>Continue to Payment</span>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Activate Free Beta Access</span>
                 </>
               )}
             </button>

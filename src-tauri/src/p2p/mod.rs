@@ -333,7 +333,14 @@ impl P2PManager {
 
         // Step 1: Check grid session status
         let status = self.get_grid_status(&grid_id).await?;
-        
+
+        // Log session start
+        if let Ok(user_id) = self.get_current_user_id().await {
+            if let Some(logger) = crate::LOGGER.as_ref() {
+                logger.log_session_start(user_id, grid_id.clone());
+            }
+        }
+
         match status.session_state.as_str() {
             "hosted" => {
                 // Connect to existing host's process
@@ -539,6 +546,8 @@ impl P2PManager {
 
                 tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
 
+                let start_time = std::time::Instant::now();
+
                 // Check again after sleep (user might have cancelled during wait)
                 {
                     let reconnection_states = manager.reconnection_states.lock().await;
@@ -557,9 +566,38 @@ impl P2PManager {
                 }
 
                 // Attempt reconnection
-                match manager.connect_to_grid_host(grid_id_task.clone(), host_user_id_task.clone()).await {
+                let connection_result = manager.connect_to_grid_host(grid_id_task.clone(), host_user_id_task.clone()).await;
+                let duration_ms = start_time.elapsed().as_millis() as u64;
+
+                // Log connection attempt
+                if let Ok(user_id) = manager.get_current_user_id().await {
+                    if let Some(logger) = crate::LOGGER.as_ref() {
+                        logger.log_connection_attempt(
+                            user_id.clone(),
+                            grid_id_task.clone(),
+                            "p2p",
+                            connection_result.is_ok(),
+                            duration_ms,
+                            connection_result.as_ref().err().map(|e| e.to_string()),
+                        );
+                    }
+                }
+
+                match connection_result {
                     Ok(_) => {
                         log::info!("Successfully reconnected to grid {}", grid_id_task);
+
+                        // Log successful connection establishment
+                        if let Ok(user_id) = manager.get_current_user_id().await {
+                            if let Some(logger) = crate::LOGGER.as_ref() {
+                                logger.log_connection_established(
+                                    user_id,
+                                    grid_id_task.clone(),
+                                    "p2p",
+                                    Some(duration_ms),
+                                );
+                            }
+                        }
 
                         // Clear reconnection state
                         {
@@ -577,6 +615,20 @@ impl P2PManager {
                     }
                     Err(e) => {
                         log::warn!("Reconnection attempt {} failed for grid {}: {}", retry_count + 1, grid_id_task, e);
+
+                        // Log connection failure
+                        if let Ok(user_id) = manager.get_current_user_id().await {
+                            if let Some(logger) = crate::LOGGER.as_ref() {
+                                logger.log_connection_failed(
+                                    user_id,
+                                    grid_id_task.clone(),
+                                    "p2p",
+                                    e.to_string(),
+                                    retry_count + 1 < MAX_RETRIES,
+                                );
+                            }
+                        }
+
                         retry_count += 1;
                     }
                 }
@@ -806,8 +858,23 @@ impl P2PManager {
     // Close session
     pub async fn close_session(&self, session_key: String) -> Result<()> {
         let mut connections = self.connections.lock().await;
-        
+
         if let Some(mut connection) = connections.remove(&session_key) {
+            // Extract grid_id from session_key (format: "grid_id" or "grid_id:user_id")
+            let grid_id = if session_key.contains(':') {
+                session_key.split(':').next().unwrap_or(&session_key).to_string()
+            } else {
+                session_key.clone()
+            };
+
+            // Log session end
+            if let Ok(user_id) = self.get_current_user_id().await {
+                if let Some(logger) = crate::LOGGER.as_ref() {
+                    let duration_minutes = (connection.get_created_at() as u64) / 60;
+                    logger.log_session_end(user_id, grid_id, duration_minutes, None);
+                }
+            }
+
             connection.close().await?;
             log::info!("Session {} closed", session_key);
         }
@@ -1377,6 +1444,18 @@ impl P2PManager {
         // Add transport to the P2P connection
         let transport_id = self.add_transport_to_connection(grid_id.clone(), transport_config).await?;
         log::info!("Transport tunnel started: {}", transport_id);
+
+        // Log process viewed event
+        if let Ok(user_id) = self.get_current_user_id().await {
+            if let Some(logger) = crate::LOGGER.as_ref() {
+                logger.log_process_viewed(
+                    user_id,
+                    grid_id.clone(),
+                    process_id.clone(),
+                    "desktop_app",
+                );
+            }
+        }
 
         // Emit connection event
         self.app_handle

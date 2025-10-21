@@ -59,3 +59,104 @@ pub fn is_anonymous_token(token: &str) -> Result<bool> {
     let claims = parse_jwt_claims(token)?;
     Ok(claims.account_type.as_deref() == Some("anonymous"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonwebtoken::{encode, EncodingKey, Header};
+
+    // Helper function to create a test JWT token
+    fn create_test_token(
+        user_id: &str,
+        token_type: &str,
+        dev_handle: Option<String>,
+        account_type: Option<String>,
+    ) -> String {
+        let claims = JwtClaims {
+            iss: "test-issuer".to_string(),
+            sub: user_id.to_string(),
+            aud: Some("test-audience".to_string()),
+            dev_handle,
+            account_type,
+            exp: 9999999999, // Far future
+            iat: 1000000000,
+            nbf: Some(1000000000),
+            token_type: token_type.to_string(),
+        };
+
+        let key = EncodingKey::from_secret(b"test-secret");
+        encode(&Header::default(), &claims, &key).unwrap()
+    }
+
+    #[test]
+    fn test_extract_user_id_from_token() {
+        let token = create_test_token(
+            "user-12345",
+            "provisional",
+            Some("testuser".to_string()),
+            None,
+        );
+
+        let result = extract_user_id_from_token(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "user-12345");
+    }
+
+    #[test]
+    fn test_extract_display_name_with_dev_handle() {
+        let token = create_test_token(
+            "user-12345",
+            "provisional",
+            Some("john_doe".to_string()),
+            None,
+        );
+
+        let result = extract_display_name_from_token(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "john_doe");
+    }
+
+    #[test]
+    fn test_extract_display_name_without_dev_handle() {
+        let token = create_test_token(
+            "user-abcd1234",
+            "anonymous",
+            None,
+            Some("anonymous".to_string()),
+        );
+
+        let result = extract_display_name_from_token(&token);
+        assert!(result.is_ok());
+        let display_name = result.unwrap();
+        // Should fallback to "User {first 8 chars of user_id}"
+        assert_eq!(display_name, "User user-abc");
+    }
+
+    #[test]
+    fn test_is_provisional_token_returns_true() {
+        let token = create_test_token(
+            "user-12345",
+            "provisional",
+            Some("testuser".to_string()),
+            None,
+        );
+
+        let result = is_provisional_token(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+    }
+
+    #[test]
+    fn test_is_anonymous_token_returns_true() {
+        let token = create_test_token(
+            "user-12345",
+            "anonymous",
+            None,
+            Some("anonymous".to_string()),
+        );
+
+        let result = is_anonymous_token(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+    }
+}

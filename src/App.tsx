@@ -55,10 +55,32 @@ function AppContent() {
     }
 
     initApp()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSessionCreated = async (newUserState: UserState) => {
     setUserState(newUserState)
+
+    // BETA LAUNCH: Auto-activate free relay subscription
+    try {
+      const authToken = await invoke<string>('get_auth_token')
+      const response = await fetch('https://api.roguegrid9.com/api/v1/relay/checkout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          location: 'us-east', // Default location
+        }),
+      })
+
+      if (response.ok) {
+        console.log('[Beta] Auto-activated free relay subscription')
+      }
+    } catch (error) {
+      // Silently handle relay activation errors - don't block login
+      console.warn('[Beta] Failed to auto-activate relay subscription:', error)
+    }
 
     // Connect WebSocket after successful authentication
     try {

@@ -20,3 +20,64 @@ pub async fn get_common_ports_in_use() -> Result<Vec<u16>, String> {
     
     Ok(ports_in_use)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_is_port_in_use_free_port() {
+        // Find a free port by binding and then dropping
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let free_port = listener.local_addr().unwrap().port();
+        drop(listener); // Release the port
+
+        // Now check that the port is free
+        let in_use = is_port_in_use(free_port).await;
+        assert!(!in_use);
+    }
+
+    #[tokio::test]
+    async fn test_is_port_in_use_occupied_port() {
+        // Bind to a port to occupy it
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let occupied_port = listener.local_addr().unwrap().port();
+
+        // Check that the port is in use
+        let in_use = is_port_in_use(occupied_port).await;
+        assert!(in_use);
+
+        // Clean up
+        drop(listener);
+    }
+
+    #[tokio::test]
+    async fn test_get_common_ports_in_use_returns_vec() {
+        let result = get_common_ports_in_use().await;
+        assert!(result.is_ok());
+
+        let ports = result.unwrap();
+        // Result should be a vector (may be empty or have entries)
+        assert!(ports.len() <= 10); // Should not exceed the number of common ports checked
+    }
+
+    #[tokio::test]
+    async fn test_get_common_ports_in_use_with_occupied_port() {
+        // Occupy a common port (3000)
+        let listener = TcpListener::bind("127.0.0.1:3000");
+
+        let result = get_common_ports_in_use().await;
+        assert!(result.is_ok());
+
+        let ports = result.unwrap();
+
+        // If we successfully bound to port 3000, it should be in the results
+        if listener.is_ok() {
+            assert!(ports.contains(&3000));
+        }
+
+        // Clean up
+        drop(listener);
+    }
+}
