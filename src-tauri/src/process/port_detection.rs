@@ -218,7 +218,7 @@ pub fn detect_port_by_binding(common_ports: &[u16]) -> Option<PortInfo> {
 
     for port in common_ports {
         // Try to bind to the port
-        if TcpListener::bind(format!("127.0.0.1:{}", port)).is_err() {
+        if TcpListener::bind(format!("localhost:{}", port)).is_err() {
             // Port is in use - but we don't know if it's our process
             return Some(PortInfo {
                 port: *port,

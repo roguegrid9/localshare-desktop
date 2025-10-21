@@ -1294,7 +1294,7 @@ impl P2PConnection {
                                                 let mut connections = tcp_connections.lock().await;
                                                 if !connections.contains_key(&connection_key) {
                                                     // Create new TCP connection to target process
-                                                    match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", target_port)).await {
+                                                    match tokio::net::TcpStream::connect(format!("localhost:{}", target_port)).await {
                                                         Ok(stream) => {
                                                             log::info!("Opened TCP connection to localhost:{} for {}", target_port, connection_id);
 

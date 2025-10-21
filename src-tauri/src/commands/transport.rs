@@ -333,7 +333,7 @@ async fn try_http_request(port: u16) -> Result<String, Box<dyn std::error::Error
     // Try to connect and send a simple HTTP request
     let mut stream = timeout(
         std::time::Duration::from_millis(1000),
-        TcpStream::connect(format!("127.0.0.1:{}", port))
+        TcpStream::connect(format!("localhost:{}", port))
     ).await??;
     
     // Send simple HTTP GET request

@@ -3,7 +3,7 @@ use std::net::TcpListener;
 // Helper function to check if a port is in use
 pub async fn is_port_in_use(port: u16) -> bool {
     // Try to bind to the port - if it fails, the port is in use
-    TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
+    TcpListener::bind(format!("localhost:{}", port)).is_err()
 }
 
 // Quick command to get common development ports that might be in use
@@ -13,7 +13,7 @@ pub async fn get_common_ports_in_use() -> Result<Vec<u16>, String> {
     
     for port in common_ports {
         // Try to bind to the port to see if it's in use
-        if TcpListener::bind(format!("127.0.0.1:{}", port)).is_err() {
+        if TcpListener::bind(format!("localhost:{}", port)).is_err() {
             ports_in_use.push(port);
         }
     }

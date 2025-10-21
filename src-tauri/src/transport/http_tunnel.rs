@@ -37,7 +37,7 @@ impl HttpTunnel {
     async fn find_available_port() -> Result<u16> {
         // Try to find an available port starting from 3001
         for port in 3001..4000 {
-            if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+            if let Ok(listener) = TcpListener::bind(format!("localhost:{}", port)).await {
                 let local_port = listener.local_addr()?.port();
                 drop(listener); // Close the test listener
                 return Ok(local_port);
@@ -47,7 +47,7 @@ impl HttpTunnel {
     }
 
     async fn start_proxy_server(&mut self, local_port: u16, data_channel: Arc<RTCDataChannel>) -> Result<()> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", local_port)).await
+        let listener = TcpListener::bind(format!("localhost:{}", local_port)).await
             .with_context(|| format!("Failed to bind to port {}", local_port))?;
 
         log::info!("HTTP tunnel listening on http://localhost:{} -> remote port {}", 

@@ -341,8 +341,8 @@ pub async fn get_monitoring_status(
 async fn is_port_accessible(port: u16) -> bool {
     use tokio::net::TcpStream;
     use std::time::Duration;
-    
-    let address = format!("127.0.0.1:{}", port);
+
+    let address = format!("localhost:{}", port);
     
     match tokio::time::timeout(
         Duration::from_millis(1000),

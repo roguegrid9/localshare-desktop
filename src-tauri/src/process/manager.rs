@@ -729,8 +729,8 @@ impl ProcessManager {
 
     async fn check_port_in_use(&self, port: u16) -> bool {
         use tokio::net::TcpListener;
-        
-        match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+
+        match TcpListener::bind(format!("localhost:{}", port)).await {
             Ok(_) => false,
             Err(_) => true,
         }

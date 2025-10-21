@@ -135,7 +135,7 @@ async fn probe_tcp_port(port: u16) -> bool {
     use tokio::time::timeout;
 
     // Try to connect with 2-second timeout
-    let connect_future = TcpStream::connect(format!("127.0.0.1:{}", port));
+    let connect_future = TcpStream::connect(format!("localhost:{}", port));
 
     match timeout(Duration::from_secs(2), connect_future).await {
         Ok(Ok(_stream)) => {
