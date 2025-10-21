@@ -138,7 +138,7 @@ Contributions welcome! We're planning to open source more components soon.
 
 ## 📜 License
 
-[Your license here]
+MIT Licence
 
 ---
 
