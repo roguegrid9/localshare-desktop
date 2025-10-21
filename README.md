@@ -1,130 +1,191 @@
-# RogueGrid9
+# LocalShare (by RogueGrid)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.4--beta-orange.svg)](https://github.com/roguegrid9/roguegrid-desktop/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#-platform-support)
+> Share your localhost instantly. No deploy, no config, just share.
 
-> **Open Beta Now Available!** Collaborative computing platform with P2P process sharing - no cloud required.
+[![Download](https://img.shields.io/github/v/release/roguegrid9/roguegrid9)](https://github.com/roguegrid9/roguegrid9/releases)
+[![License](https://img.shields.io/github/license/roguegrid9/roguegrid9)](LICENSE)
 
-🚧 **This is beta software** - expect bugs, breaking changes, and rough edges. [Report issues](https://github.com/roguegrid9/roguegrid-desktop/issues) or [get help on Discord](https://discord.gg/7cs9Uh32).
-
----
-
-## 🎯 What is RogueGrid9?
-
-RogueGrid9 lets teams share running processes, terminals, and applications directly between computers using P2P networking. Think Discord meets VPS, but running on your own hardware.
-
-**Use Cases:**
-- Share development servers with your team in real-time
-- Collaborative debugging and pair programming
-- Multi-player game server hosting
-- Distributed computing experiments
-- Remote IT support and troubleshooting
-- Other cool stuff I havent thought of
+**[Download Beta](https://github.com/roguegrid9/roguegrid9/releases/latest)** • **[Website](https://roguegrid9.com)** • **[Documentation](docs/)**
 
 ---
 
-## Features
+## What is LocalShare?
 
-### ✅ Available Now (Beta)
-- **P2P Process Sharing** - Share terminal sessions, dev servers, and running applications
-- **Grid Management** - Create collaborative workspaces and invite team members
-- **Real-time Text Chat** - Instant messaging within grids
-- **OAuth Authentication** - Secure login with Google or GitHub
-- **Cross-platform** - Windows, Linux, and macOS support
+LocalShare lets you share any localhost server with teammates in one click. Perfect for code reviews, client demos, pair programming, and quick feedback.
 
-### 🚧 Experimental (May Have Issues)
-- **Voice Chat** - WebRTC-based voice communication (early stage)
-- **macOS Process Discovery** - Limited process detection on Mac
+**The problem:** "Can you review my PR?" → Checkout branch, npm install, npm run dev... 10 minutes wasted.
 
-### 📋 Coming Soon (v0.2.0+)
-- Stable voice chat with screen sharing
-- Full macOS support
-- File sharing and collaborative editing
-- Performance optimizations
-- UI/UX improvements
-- A lot more cool stuff like tunnels relays 24/7 process persistance
+**The solution:** Click share, send link, done. 30 seconds.
 
 ---
 
-## 💾 Installation
+## ✨ Features
 
-### Download Latest Release
-
-[**📥 Download Beta v0.1.5**](https://github.com/roguegrid9/roguegrid-desktop/releases/latest)
-
-**Choose your platform:**
-- 🪟 **Windows 10/11**: `RogueGrid9_0.1.5_x64-setup.exe`
-- 🐧 **Linux (Ubuntu 22.04+)**: `roguegrid9_0.1.5_amd64.AppImage`
-- 🍎 **macOS 14+**: `RogueGrid9_0.1.5_aarch64.dmg` (Apple Silicon) or `x64.dmg` (Intel)
-
-### Platform-Specific Notes
-
-**Windows:**
-- SmartScreen warning is expected (app not yet code-signed for Windows)
-- Click "More info/Advanced" → "Run anyway"
-
-**Linux:**
-- Make AppImage executable: `chmod +x roguegrid9_*.AppImage`
-- Or install the `.deb` package
-
-**macOS:**
-- App is code-signed but not yet notarized
-- If Gatekeeper blocks it: System Settings → Privacy & Security → "Open Anyway"
+- 🚀 **One-click sharing** - Detects localhost servers automatically
+- 🔒 **Secure HTTPS** - All tunnels use HTTPS with valid certificates
+- 🌍 **Global relays** - 5 servers across 3 continents for low latency
+- ⚡ **P2P first** - Direct connections when possible, relay fallback
+- 🎨 **Fun subdomains** - purple-dragon-7824.roguegrid9.com
+- 💬 **Built-in chat** - Text and voice channels per workspace
+- 📊 **Bandwidth tracking** - 50GB free during beta
 
 ---
 
-## 🖥️ Platform Support
+## 🚀 Quick Start
 
-| Feature | Windows | Linux | macOS |
-|---------|:-------:|:-----:|:-----:|
-| Authentication | ✅ | ✅ | ✅ |
-| Grid Management | ✅ | ✅ | ✅ |
-| Text Chat | ✅ | ✅ | ✅ |
-| Process Sharing | ✅ | ✅ | ⚠️ |
-| Process Discovery | ✅ | ✅ | ⚠️ |
-| Voice Chat | 🚧 | 🚧 | 🚧 |
+### 1. Install
 
-## 🏁 Quick Start
+Download for your platform:
+- [Windows](https://github.com/roguegrid9/roguegrid9/releases/latest) (.msi)
+- [macOS](https://github.com/roguegrid9/roguegrid9/releases/latest) (.dmg)
+- [Linux](https://github.com/roguegrid9/roguegrid9/releases/latest) (.deb)
 
-1. **Download** and install for your platform
-2. **Launch** RogueGrid9
-3. **Sign in** with Google or GitHub
-4. **Create a grid** (your collaborative workspace)
-5. **Invite teammates** using the grid invite code
-6. **Share processes** by opening terminals or running servers
-7. **Collaborate** in real-time!
-
----
-
-## 🛠️ Development Setup
-
-Want to contribute or run from source?
-
-### Prerequisites
-- Node.js 18+
-- Rust 1.70+ (via [rustup](https://rustup.rs/))
-- Git
-
-### Clone & Run
+### 2. Share a Server
 ```bash
-# Clone the repository
-git clone https://github.com/roguegrid9/roguegrid-desktop.git
-cd roguegrid-desktop
+# Start any localhost server
+npm run dev  # React on :5173
+python3 -m http.server 8000  # Python on :8000
 
-# Install dependencies
-npm install
+# Open LocalShare
+# Click "Share" next to your process
+# Copy the link
+# Send to teammate
+```
 
-# Run in development mode
-npm run tauri:dev
+### 3. View in Browser
 
-# Build production binary
-npm run tauri:build
+Teammate opens the link in any browser. No app installation needed for viewers.
 
-roguegrid-desktop/
-├── src/                 # React frontend (TypeScript)
-├── src-tauri/          # Rust backend (Tauri)
-│   ├── src/            # Core Rust code
-│   └── Cargo.toml      # Rust dependencies
-├── package.json        # Node dependencies
-└── README.md           # You are here
+---
+
+## 📖 Use Cases
+
+### Code Reviews
+```
+Before: Checkout branch, npm install, npm run dev → 10 minutes
+After: Click share, send link → 30 seconds
+```
+
+### Client Demos
+Show work-in-progress without deploying. Get real-time feedback.
+
+### Pair Programming
+Both people can interact with the app, not just watch a screen share.
+
+### Designer Feedback
+Designers test the real thing: responsive design, animations, interactions.
+
+---
+
+## 🛠️ Framework Support
+
+### React (Vite)
+
+Add to `vite.config.js`:
+```javascript
+export default {
+  server: {
+    allowedHosts: ['.roguegrid9.com']
+  }
+}
+```
+
+### Next.js
+
+Works out of the box! Share your `localhost:3000` server.
+
+### Python
+```bash
+python3 -m http.server 8000
+# Share port 8000
+```
+
+### Node.js/Express
+
+Works with any Express app on localhost.
+
+---
+
+## 🏗️ Architecture
+
+- **Desktop App:** Rust (Tauri) + React
+- **Backend:** Go API server
+- **Database:** Supabase (PostgreSQL)
+- **Networking:** WebRTC P2P + FRP relay servers
+- **Relays:** 5 global locations (Digital Ocean, Vultr)
+
+---
+
+## 🐛 Known Issues
+
+- Grid deletion not implemented (workaround: ignore old grids)
+- Some WebSocket frameworks need configuration
+- Desktop-to-desktop P2P still in testing
+
+[See all issues](https://github.com/roguegrid9/roguegrid9/issues)
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! We're planning to open source more components soon.
+
+- Report bugs: [GitHub Issues](https://github.com/roguegrid9/roguegrid9/issues)
+- Request features: [Discussions](https://github.com/roguegrid9/roguegrid9/discussions)
+- Ask questions: Reddit or GitHub
+
+---
+
+## 📜 License
+
+[Your license here]
+
+---
+
+## 🙏 Acknowledgments
+
+Built with these amazing open source projects:
+- [Tauri](https://tauri.app) - Desktop framework
+- [WebRTC](https://webrtc.org) - P2P networking
+- [FRP](https://github.com/fatedier/frp) - Relay servers
+- [Supabase](https://supabase.com) - Backend infrastructure
+
+---
+
+**Website:** https://roguegrid9.com
+**Beta:** Free • 50GB bandwidth • No credit card required
+```
+
+---
+
+## **3. Demo Video (Already Halfway Done - 30 min)**
+
+**You said halfway done - finish it:**
+
+**What you need:**
+- Total length: 2-3 minutes
+- Clear audio (critical!)
+- Shows full flow working
+- Ends with clear CTA
+
+**Upload to:**
+- YouTube (set to Public)
+- Get embed URL
+- Add to website
+
+**Title:** "LocalShare - Share Localhost Instantly (Beta Demo)"
+
+**Description:**
+```
+LocalShare lets you share any localhost server with one click.
+
+Perfect for:
+- Code reviews (30 seconds instead of 10 minutes)
+- Client demos (no deploy needed)
+- Pair programming (interactive, not just screen share)
+- Designer feedback (test the real thing)
+
+Free beta: https://roguegrid9.com
+50GB bandwidth • HTTPS everywhere • 5 global relays
+
+Built with Rust, React, and WebRTC.
