@@ -229,25 +229,39 @@ impl ProcessScanner {
         let local_address = parts[4];
 
         // Parse address:port
-        if let Some(colon_pos) = local_address.rfind(':') {
-            let addr_with_interface = &local_address[..colon_pos];
-            let port_str = &local_address[colon_pos + 1..];
+        // Handle IPv6 addresses in brackets: [::1]:5173
+        let (addr_with_interface, port_str) = if local_address.starts_with('[') {
+            // IPv6 format: [addr]:port
+            if let Some(bracket_end) = local_address.find(']') {
+                let addr = &local_address[1..bracket_end];
+                let port = &local_address[bracket_end + 2..]; // Skip ']:'
+                (addr, port)
+            } else {
+                return None;
+            }
+        } else {
+            // IPv4 format: addr:port
+            if let Some(colon_pos) = local_address.rfind(':') {
+                (&local_address[..colon_pos], &local_address[colon_pos + 1..])
+            } else {
+                return None;
+            }
+        };
 
-            if let Ok(port) = port_str.parse::<u16>() {
-                // Remove interface specifier (e.g., "127.0.0.53%lo" -> "127.0.0.53")
-                let addr = if let Some(percent_pos) = addr_with_interface.find('%') {
-                    &addr_with_interface[..percent_pos]
-                } else {
-                    addr_with_interface
-                };
+        if let Ok(port) = port_str.parse::<u16>() {
+            // Remove interface specifier (e.g., "127.0.0.53%lo" -> "127.0.0.53")
+            let addr = if let Some(percent_pos) = addr_with_interface.find('%') {
+                &addr_with_interface[..percent_pos]
+            } else {
+                addr_with_interface
+            };
 
-                // Include localhost, wildcard, and local network addresses
-                if addr == "127.0.0.1" || addr.starts_with("127.0.0.") || 
-                   addr == "0.0.0.0" || addr == "::1" || addr == "*" ||
-                   addr.starts_with("192.168.") || addr.starts_with("10.") || 
-                   addr.starts_with("172.") || addr == "localhost" {
-                    return Some((addr.to_string(), port));
-                }
+            // Include localhost, wildcard, and local network addresses (IPv4 and IPv6)
+            if addr == "127.0.0.1" || addr.starts_with("127.0.0.") ||
+               addr == "0.0.0.0" || addr == "::1" || addr == "*" || addr == "::" ||
+               addr.starts_with("192.168.") || addr.starts_with("10.") ||
+               addr.starts_with("172.") || addr == "localhost" {
+                return Some((addr.to_string(), port));
             }
         }
 
@@ -264,33 +278,47 @@ impl ProcessScanner {
         let local_address = parts[4];
 
         // Parse address:port
-        if let Some(colon_pos) = local_address.rfind(':') {
-            let addr_with_interface = &local_address[..colon_pos];
-            let port_str = &local_address[colon_pos + 1..];
+        // Handle IPv6 addresses in brackets: [::1]:5173
+        let (addr_with_interface, port_str) = if local_address.starts_with('[') {
+            // IPv6 format: [addr]:port
+            if let Some(bracket_end) = local_address.find(']') {
+                let addr = &local_address[1..bracket_end];
+                let port = &local_address[bracket_end + 2..]; // Skip ']:'
+                (addr, port)
+            } else {
+                return None;
+            }
+        } else {
+            // IPv4 format: addr:port
+            if let Some(colon_pos) = local_address.rfind(':') {
+                (&local_address[..colon_pos], &local_address[colon_pos + 1..])
+            } else {
+                return None;
+            }
+        };
 
-            if let Ok(port) = port_str.parse::<u16>() {
-                // Remove interface specifier
-                let addr = if let Some(percent_pos) = addr_with_interface.find('%') {
-                    &addr_with_interface[..percent_pos]
+        if let Ok(port) = port_str.parse::<u16>() {
+            // Remove interface specifier
+            let addr = if let Some(percent_pos) = addr_with_interface.find('%') {
+                &addr_with_interface[..percent_pos]
+            } else {
+                addr_with_interface
+            };
+
+            // Only include local addresses (IPv4 and IPv6)
+            if addr == "127.0.0.1" || addr.starts_with("127.0.0.") ||
+               addr == "0.0.0.0" || addr == "::1" || addr == "*" || addr == "::" ||
+               addr.starts_with("192.168.") || addr.starts_with("10.") ||
+               addr.starts_with("172.") || addr == "localhost" {
+
+                // Extract PID if available
+                let pid = if parts.len() > 6 && parts[6].contains("users:") {
+                    self.extract_pid_from_users_field(parts[6])
                 } else {
-                    addr_with_interface
+                    None
                 };
 
-                // Only include local addresses
-                if addr == "127.0.0.1" || addr.starts_with("127.0.0.") || 
-                   addr == "0.0.0.0" || addr == "::1" || addr == "*" ||
-                   addr.starts_with("192.168.") || addr.starts_with("10.") || 
-                   addr.starts_with("172.") || addr == "localhost" {
-                    
-                    // Extract PID if available
-                    let pid = if parts.len() > 6 && parts[6].contains("users:") {
-                        self.extract_pid_from_users_field(parts[6])
-                    } else {
-                        None
-                    };
-                    
-                    return Some((port, pid));
-                }
+                return Some((port, pid));
             }
         }
 
