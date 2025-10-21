@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LocalShare",
-  "version": "0.1.5",
+  "version": "0.0.1",
   "identifier": "com.localshare.app",
   "build": {
     "beforeDevCommand": "npm run dev",
