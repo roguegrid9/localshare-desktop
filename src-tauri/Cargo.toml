@@ -65,6 +65,10 @@ webrtc = "0.9"
 interceptor = "0.10"
 bytes = "1.5"
 
+# Unix process management
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.27", features = ["signal", "process"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.12"
