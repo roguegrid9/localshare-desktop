@@ -58,16 +58,21 @@ impl FRPClient {
             return Err(format!("FRP binary not found at {:?}", frpc_path));
         }
 
-        // Make executable on Unix
+        // Make executable on Unix (only if not already executable)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&frpc_path)
-                .map_err(|e| format!("Failed to get permissions: {}", e))?
-                .permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&frpc_path, perms)
-                .map_err(|e| format!("Failed to set permissions: {}", e))?;
+            let metadata = std::fs::metadata(&frpc_path)
+                .map_err(|e| format!("Failed to get permissions: {}", e))?;
+            let perms = metadata.permissions();
+
+            // Check if already executable (owner execute bit set)
+            if perms.mode() & 0o100 == 0 {
+                let mut new_perms = perms.clone();
+                new_perms.set_mode(0o755);
+                // Try to set permissions, but don't fail if we can't (already in read-only location)
+                let _ = std::fs::set_permissions(&frpc_path, new_perms);
+            }
         }
 
         Ok(frpc_path)
